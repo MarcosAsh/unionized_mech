@@ -27,6 +27,14 @@ constexpr f32 DUCK_HEIGHT = 1.0f;      // hull height while crouched
 constexpr f32 SLIDE_FRICTION = 1.5f;   // low friction so a slide keeps momentum
 constexpr f32 SLIDE_MIN_SPEED = 5.0f;  // crouch above this speed becomes a slide
 
+// Wallrun tuning.
+constexpr f32 WALL_DETECT_DIST = 0.15f;  // how close a wall must be to grab
+constexpr f32 WALLRUN_MIN_SPEED = 4.0f;  // along-wall speed needed to start
+constexpr f32 WALLRUN_GRAVITY = 6.0f;    // reduced gravity while wallrunning
+constexpr f32 WALLRUN_MAX_FALL = 3.0f;   // cap downward speed on the wall
+constexpr f32 WALLJUMP_UP = 6.0f;        // upward launch off the wall
+constexpr f32 WALLJUMP_PUSH = 6.0f;      // push away from the wall
+
 u64 fnv1a(u64 h, const void* data, u64 n) {
     const u8* p = static_cast<const u8*>(data);
     for (u64 i = 0; i < n; ++i) {
@@ -40,6 +48,49 @@ u64 fnv1a(u64 h, const void* data, u64 n) {
 bool hull_overlaps(f32 x, f32 y, f32 z, f32 height, const Aabb& b) {
     return x - HULL_HALF_WIDTH < b.max_x && x + HULL_HALF_WIDTH > b.min_x && y < b.max_y &&
            y + height > b.min_y && z - HULL_HALF_WIDTH < b.max_z && z + HULL_HALF_WIDTH > b.min_z;
+}
+
+// Look for a vertical box face within reach on a horizontal side of the hull at
+// (x, y, z). On success writes the outward wall normal and returns true.
+bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes, f32* out_nx,
+               f32* out_nz) {
+    for (u64 i = 0; i < boxes.size(); ++i) {
+        const Aabb& b = boxes[i];
+        if (!(y < b.max_y && y + height > b.min_y)) {
+            continue;  // no vertical overlap with this box
+        }
+        const bool z_overlap = z - HULL_HALF_WIDTH < b.max_z && z + HULL_HALF_WIDTH > b.min_z;
+        const bool x_overlap = x - HULL_HALF_WIDTH < b.max_x && x + HULL_HALF_WIDTH > b.min_x;
+        if (z_overlap) {
+            if ((x - HULL_HALF_WIDTH) - b.max_x >= -0.01f &&
+                (x - HULL_HALF_WIDTH) - b.max_x <= WALL_DETECT_DIST) {
+                *out_nx = 1.0f;
+                *out_nz = 0.0f;
+                return true;
+            }
+            if (b.min_x - (x + HULL_HALF_WIDTH) >= -0.01f &&
+                b.min_x - (x + HULL_HALF_WIDTH) <= WALL_DETECT_DIST) {
+                *out_nx = -1.0f;
+                *out_nz = 0.0f;
+                return true;
+            }
+        }
+        if (x_overlap) {
+            if ((z - HULL_HALF_WIDTH) - b.max_z >= -0.01f &&
+                (z - HULL_HALF_WIDTH) - b.max_z <= WALL_DETECT_DIST) {
+                *out_nx = 0.0f;
+                *out_nz = 1.0f;
+                return true;
+            }
+            if (b.min_z - (z + HULL_HALF_WIDTH) >= -0.01f &&
+                b.min_z - (z + HULL_HALF_WIDTH) <= WALL_DETECT_DIST) {
+                *out_nx = 0.0f;
+                *out_nz = -1.0f;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 const Aabb LEVEL[] = {
@@ -124,9 +175,39 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         }
     }
 
-    next.vel_y -= GRAVITY * SIM_DT;
-    if (grounded && sim::button_down(cmd.buttons, Button::Jump)) {
-        next.vel_y = JUMP_VELOCITY;
+    // Wallrun: while airborne and moving along a nearby wall, stick to it, run
+    // with reduced gravity, and allow a launch off it.
+    f32 wall_nx = 0.0f;
+    f32 wall_nz = 0.0f;
+    bool wallrunning = false;
+    if (!grounded &&
+        find_wall(next.cam_x, next.cam_y, next.cam_z, hull_h, level_boxes(), &wall_nx, &wall_nz)) {
+        const f32 into = next.vel_x * wall_nx + next.vel_z * wall_nz;
+        const f32 along_x = next.vel_x - into * wall_nx;
+        const f32 along_z = next.vel_z - into * wall_nz;
+        const f32 along = sim_sqrt(along_x * along_x + along_z * along_z);
+        if (along > WALLRUN_MIN_SPEED && into < 1.0f) {
+            wallrunning = true;
+            if (into < 0.0f) {  // cancel motion into the wall so you hug it
+                next.vel_x -= into * wall_nx;
+                next.vel_z -= into * wall_nz;
+            }
+        }
+    }
+
+    next.vel_y -= (wallrunning ? WALLRUN_GRAVITY : GRAVITY) * SIM_DT;
+    if (wallrunning && next.vel_y < -WALLRUN_MAX_FALL) {
+        next.vel_y = -WALLRUN_MAX_FALL;
+    }
+
+    if (button_down(cmd.buttons, Button::Jump)) {
+        if (grounded) {
+            next.vel_y = JUMP_VELOCITY;
+        } else if (wallrunning) {
+            next.vel_y = WALLJUMP_UP;
+            next.vel_x += wall_nx * WALLJUMP_PUSH;
+            next.vel_z += wall_nz * WALLJUMP_PUSH;
+        }
     }
 
     // Move and slide, one axis at a time, against the static boxes. Resolving
