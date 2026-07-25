@@ -57,6 +57,10 @@ add_executable(sim_tests tests/sim_tests.cpp)
 target_link_libraries(sim_tests PRIVATE sim)
 add_test(NAME sim_tests COMMAND sim_tests)
 
+add_executable(render_math_tests tests/render_math_tests.cpp)
+target_link_libraries(render_math_tests PRIVATE core)
+add_test(NAME render_math_tests COMMAND render_math_tests)
+
 # Still to land in M0:
 #   gpu swapchain, frame contexts, allocator, bindless set (next: clear + present)
 #   add_subdirectory(src/render)    # triangle pass, interpolated draw

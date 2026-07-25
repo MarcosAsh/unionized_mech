@@ -14,6 +14,29 @@ struct Mat4 {
     f32 m[16];
 };
 
+/// Linear interpolation with exact endpoints: t=0 gives a, t=1 gives b.
+[[nodiscard]] inline f32 lerp(f32 a, f32 b, f32 t) { return (1.0f - t) * a + t * b; }
+
+/// Shortest-path interpolation of angles in radians, with exact endpoints.
+[[nodiscard]] inline f32 angle_lerp(f32 a, f32 b, f32 t) {
+    if (t <= 0.0f) {
+        return a;
+    }
+    if (t >= 1.0f) {
+        return b;
+    }
+    const f32 pi = 3.14159265358979f;
+    const f32 two_pi = 6.28318530717959f;
+    f32 d = b - a;
+    while (d > pi) {
+        d -= two_pi;
+    }
+    while (d < -pi) {
+        d += two_pi;
+    }
+    return a + t * d;
+}
+
 /// Matrix product a * b.
 [[nodiscard]] inline Mat4 mat4_mul(const Mat4& a, const Mat4& b) {
     Mat4 out{};

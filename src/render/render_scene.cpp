@@ -114,7 +114,14 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
     return scene;
 }
 
-void Scene::draw(const gpu::Frame& frame, f32 cam_x, f32 cam_y, f32 cam_z, f32 yaw, f32 pitch) {
+void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr,
+                 f32 alpha) {
+    const f32 cam_x = lerp(prev.cam_x, curr.cam_x, alpha);
+    const f32 cam_y = lerp(prev.cam_y, curr.cam_y, alpha);
+    const f32 cam_z = lerp(prev.cam_z, curr.cam_z, alpha);
+    const f32 yaw = angle_lerp(prev.cam_yaw, curr.cam_yaw, alpha);
+    const f32 pitch = lerp(prev.cam_pitch, curr.cam_pitch, alpha);
+
     const f32 aspect =
         static_cast<f32>(frame.extent.width) / static_cast<f32>(frame.extent.height);
     const Mat4 proj = perspective(1.2217f, aspect, 0.1f, 500.0f);

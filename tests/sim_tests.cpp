@@ -65,10 +65,40 @@ static void test_tick_advances() {
     ASSERT(next.tick == TickId{1});
 }
 
+// Acceptance check 6: a stall runs the right number of ticks (capping does not
+// lose time), and a stream of tiny frames sums to the right tick count.
+static void test_fixed_timestep() {
+    const f64 dt = static_cast<f64>(SIM_DT);
+    const u32 expected = static_cast<u32>(0.2 / dt);
+    ASSERT(expected > 8);  // a 200ms stall exceeds the per-frame cap
+
+    // Capped path drains over several frames to the same total.
+    FixedTimestep capped;
+    u32 total = capped.advance(0.2, 8);
+    ASSERT(total == 8);
+    while (total < expected) {
+        total += capped.advance(0.0, 8);
+    }
+    ASSERT(total == expected);
+
+    // Uncapped path runs it all at once.
+    FixedTimestep uncapped;
+    ASSERT(uncapped.advance(0.2, 1000) == expected);
+
+    // A second of tiny frames is exactly one second of ticks.
+    FixedTimestep tiny;
+    u32 count = 0;
+    for (u32 i = 0; i < 1000; ++i) {
+        count += tiny.advance(0.001, 8);
+    }
+    ASSERT(count == static_cast<u32>(1.0 / dt));
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
     test_tick_advances();
+    test_fixed_timestep();
     core::log_info("sim_tests: all passed");
     return 0;
 }

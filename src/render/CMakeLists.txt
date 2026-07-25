@@ -10,7 +10,9 @@ add_library(render STATIC
 add_dependencies(render scene_shaders)
 
 target_include_directories(render PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(render PUBLIC core gpu)
+
+# render reads sim types (World) as const in its public header.
+target_link_libraries(render PUBLIC core gpu sim)
 target_link_libraries(render PRIVATE volk)
 
 # Absolute path to the compiled SPIR-V, as a C string literal.

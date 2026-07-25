@@ -88,4 +88,20 @@ void simulate(const World& prev, const InputCmd& cmd, World& next);
 /// determinism harness and, later, by the server.
 [[nodiscard]] u64 hash(const World& w);
 
+/// Fixed-timestep accumulator. Converts variable frame time into a whole number
+/// of 60Hz ticks, capping how many run in one frame but keeping the leftover
+/// time for later frames, so no simulation time is lost (keep-the-debt).
+class FixedTimestep {
+public:
+    /// Fold in `elapsed` seconds and return how many ticks to run now, at most
+    /// `max_ticks`.
+    [[nodiscard]] u32 advance(f64 elapsed, u32 max_ticks);
+
+    /// Fraction into the next tick, in [0, 1), for render interpolation.
+    [[nodiscard]] f32 alpha() const;
+
+private:
+    f64 accumulator_ = 0.0;
+};
+
 }  // namespace sim

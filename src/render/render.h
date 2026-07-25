@@ -3,6 +3,7 @@
 #include "core/arena.h"
 #include "core/types.h"
 #include "gpu/gpu.h"
+#include "sim/sim.h"
 
 namespace render {
 
@@ -21,9 +22,9 @@ public:
     Scene(const Scene&) = delete;
     Scene& operator=(const Scene&) = delete;
 
-    /// Record the scene into `frame`, viewed from a first-person camera at the
-    /// given position and orientation.
-    void draw(const gpu::Frame& frame, f32 cam_x, f32 cam_y, f32 cam_z, f32 yaw, f32 pitch);
+    /// Record the scene into `frame`, viewed from a first-person camera
+    /// interpolated between the `prev` and `curr` snapshots by `alpha` in [0, 1].
+    void draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr, f32 alpha);
 
 private:
     Scene() = default;

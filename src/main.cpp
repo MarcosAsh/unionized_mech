@@ -1,4 +1,5 @@
 #include "core/arena.h"
+#include "core/assert.h"
 #include "core/log.h"
 #include "core/timer.h"
 #include "core/types.h"
@@ -34,8 +35,8 @@ u64 parse_frame_cap(int argc, char** argv) {
 
 }  // namespace
 
-// M0 frame loop. Fixed 60Hz simulation, and a swapchain clear whose colour is
-// driven by the simulation's spin angle so the window visibly animates.
+// M0 frame loop. Fixed 60Hz simulation double-buffered into two snapshots, with
+// the render interpolating between them by the leftover-time alpha.
 int main(int argc, char** argv) {
     const u64 frame_cap = parse_frame_cap(argc, argv);
     const bool interactive = frame_cap == 0;
@@ -87,10 +88,13 @@ int main(int argc, char** argv) {
     core::log_infof("window %ux%u. WASD moves, mouse looks, Escape quits.", win.width(),
                     win.height());
 
-    constexpr i32 MAX_TICKS_PER_FRAME = 8;
+    constexpr u32 MAX_TICKS_PER_FRAME = 8;
 
-    sim::World world{};
-    f64 accumulator = 0.0;
+    sim::World prev_world{};
+    sim::World curr_world{};
+    sim::FixedTimestep timestep;
+
+    const u64 permanent_baseline = permanent.used();
     const u64 start_ns = core::Timer::now_ns();
     u64 prev_ns = start_ns;
     u64 report_ns = start_ns;
@@ -103,29 +107,30 @@ int main(int argc, char** argv) {
         win.pump();
 
         const u64 now_ns = core::Timer::now_ns();
-        accumulator += static_cast<f64>(now_ns - prev_ns) * 1e-9;
+        const f64 elapsed = static_cast<f64>(now_ns - prev_ns) * 1e-9;
         prev_ns = now_ns;
 
-        i32 steps = 0;
-        while (accumulator >= static_cast<f64>(sim::SIM_DT) && steps < MAX_TICKS_PER_FRAME) {
-            const sim::InputCmd cmd = win.capture_input(world.tick);
+        const u32 ticks = timestep.advance(elapsed, MAX_TICKS_PER_FRAME);
+        for (u32 i = 0; i < ticks; ++i) {
+            prev_world = curr_world;
+            const sim::InputCmd cmd = win.capture_input(curr_world.tick);
             sim::World next{};
-            sim::simulate(world, cmd, next);
-            world = next;
-            accumulator -= static_cast<f64>(sim::SIM_DT);
-            ++steps;
+            sim::simulate(curr_world, cmd, next);
+            curr_world = next;
             ++total_ticks;
         }
 
         const gpu::Frame gpu_frame = renderer.begin_frame(win.width(), win.height());
         if (gpu_frame.valid) {
-            scene.draw(gpu_frame, world.cam_x, world.cam_y, world.cam_z, world.cam_yaw,
-                       world.cam_pitch);
+            scene.draw(gpu_frame, prev_world, curr_world, timestep.alpha());
             renderer.end_frame();
         }
 
         frame.reset();
         ++frames;
+
+        // Acceptance check 4: nothing allocates from the permanent arena in the loop.
+        ASSERT(permanent.used() == permanent_baseline);
 
         if (now_ns - report_ns >= 1000000000ull) {
             const f64 dt = static_cast<f64>(now_ns - report_ns) * 1e-9;
@@ -134,9 +139,9 @@ int main(int argc, char** argv) {
                 static_cast<f64>(now_ns - start_ns) * 1e-9,
                 static_cast<f64>(total_ticks - ticks_at_report) / dt,
                 static_cast<f64>(frames - frames_at_report) / dt,
-                static_cast<f64>(world.cam_yaw), static_cast<f64>(world.cam_pitch),
-                static_cast<f64>(world.cam_x), static_cast<f64>(world.cam_y),
-                static_cast<f64>(world.cam_z));
+                static_cast<f64>(curr_world.cam_yaw), static_cast<f64>(curr_world.cam_pitch),
+                static_cast<f64>(curr_world.cam_x), static_cast<f64>(curr_world.cam_y),
+                static_cast<f64>(curr_world.cam_z));
             report_ns = now_ns;
             ticks_at_report = total_ticks;
             frames_at_report = frames;
@@ -150,9 +155,6 @@ int main(int argc, char** argv) {
     core::log_infof("done. %llu frames, %llu ticks, hash=%016llx",
                     static_cast<unsigned long long>(frames),
                     static_cast<unsigned long long>(total_ticks),
-                    static_cast<unsigned long long>(sim::hash(world)));
-
-    (void)permanent;
-    (void)scratch;
+                    static_cast<unsigned long long>(sim::hash(curr_world)));
     return 0;
 }

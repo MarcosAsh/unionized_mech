@@ -55,6 +55,21 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     next.cam_z = prev.cam_z + wish_z * step;
 }
 
+u32 FixedTimestep::advance(f64 elapsed, u32 max_ticks) {
+    accumulator_ += elapsed;
+    const f64 dt = static_cast<f64>(SIM_DT);
+    u32 ticks = 0;
+    while (accumulator_ >= dt && ticks < max_ticks) {
+        accumulator_ -= dt;
+        ++ticks;
+    }
+    return ticks;
+}
+
+f32 FixedTimestep::alpha() const {
+    return static_cast<f32>(accumulator_ / static_cast<f64>(SIM_DT));
+}
+
 u64 hash(const World& w) {
     u64 h = 0xcbf29ce484222325ull;
     h = fnv1a(h, &w.tick.raw, sizeof(w.tick.raw));
