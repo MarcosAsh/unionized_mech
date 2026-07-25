@@ -32,6 +32,16 @@ cmake --build --preset debug
 ./build/debug/unionized_mech
 ```
 
+The window clears to a colour driven by the simulation, so it slowly animates.
+WASD and the mouse feed the fixed-step simulation, and Escape quits. Pass an
+optional frame count to run a fixed number of frames without grabbing the mouse
+and then exit, which is handy for a quick check:
+
+```
+./build/debug/unionized_mech 120
+```
+
 Debug turns on AddressSanitizer and UndefinedBehaviorSanitizer. Run the tests
-with `ctest --preset debug` or by running `./build/debug/core_tests`. The first
-configure clones the pinned Vulkan headers, so it needs the network.
+with `ctest --preset debug`. `um_headless 600` runs the simulation with no
+window and prints its hash, and `gpu_probe` brings up Vulkan on the real device.
+The first configure clones the pinned Vulkan headers, so it needs the network.

@@ -141,4 +141,33 @@ Instance& Instance::operator=(Instance&& other) noexcept {
     return *this;
 }
 
+Surface Surface::adopt(const Instance& instance, VkSurfaceKHR surface) {
+    Surface out;
+    out.instance_ = instance.handle();
+    out.surface_ = surface;
+    return out;
+}
+
+Surface::~Surface() {
+    if (surface_ != VK_NULL_HANDLE) {
+        vkDestroySurfaceKHR(instance_, surface_, nullptr);
+    }
+}
+
+Surface::Surface(Surface&& other) noexcept : instance_(other.instance_), surface_(other.surface_) {
+    other.surface_ = VK_NULL_HANDLE;
+}
+
+Surface& Surface::operator=(Surface&& other) noexcept {
+    if (this != &other) {
+        if (surface_ != VK_NULL_HANDLE) {
+            vkDestroySurfaceKHR(instance_, surface_, nullptr);
+        }
+        instance_ = other.instance_;
+        surface_ = other.surface_;
+        other.surface_ = VK_NULL_HANDLE;
+    }
+    return *this;
+}
+
 }  // namespace gpu

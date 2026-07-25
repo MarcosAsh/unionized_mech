@@ -10,9 +10,9 @@ FetchContent_MakeAvailable(SDL3)
 add_library(platform STATIC platform.cpp)
 target_include_directories(platform PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
-# core and sim are in the public header; SDL is an implementation detail. Its
-# headers are marked SYSTEM so they never trip our -Werror.
-target_link_libraries(platform PUBLIC core sim)
+# core, sim, and Vulkan handle types are in the public header. SDL is an
+# implementation detail; its headers are marked SYSTEM so they never trip -Werror.
+target_link_libraries(platform PUBLIC core sim Vulkan::Headers)
 target_link_libraries(platform PRIVATE SDL3::SDL3)
 
 get_target_property(_sdl_includes SDL3::SDL3 INTERFACE_INCLUDE_DIRECTORIES)

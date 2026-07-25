@@ -1,6 +1,7 @@
 #include "platform/platform.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 namespace platform {
 
@@ -26,7 +27,7 @@ i8 axis(bool positive, bool negative) {
 
 }  // namespace
 
-WindowResult Window::open(const char* title, u32 width, u32 height) {
+WindowResult Window::open(const char* title, u32 width, u32 height, bool capture_mouse) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         return WindowResult::err("SDL_Init failed");
     }
@@ -37,7 +38,9 @@ WindowResult Window::open(const char* title, u32 width, u32 height) {
         SDL_Quit();
         return WindowResult::err("SDL_CreateWindow failed");
     }
-    SDL_SetWindowRelativeMouseMode(w, true);
+    if (capture_mouse) {
+        SDL_SetWindowRelativeMouseMode(w, true);
+    }
 
     int pw = 0;
     int ph = 0;
@@ -145,6 +148,20 @@ sim::InputCmd Window::capture_input(sim::TickId tick) {
     cmd.buttons = buttons;
 
     return cmd;
+}
+
+core::Span<const char* const> Window::vulkan_instance_extensions() const {
+    Uint32 count = 0;
+    const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+    return core::Span<const char* const>(names, count);
+}
+
+core::Result<VkSurfaceKHR, const char*> Window::create_surface(VkInstance instance) const {
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    if (!SDL_Vulkan_CreateSurface(as_window(window_), instance, nullptr, &surface)) {
+        return core::Result<VkSurfaceKHR, const char*>::err("SDL_Vulkan_CreateSurface failed");
+    }
+    return core::Result<VkSurfaceKHR, const char*>::ok(surface);
 }
 
 }  // namespace platform

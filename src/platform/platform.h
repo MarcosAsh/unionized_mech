@@ -1,8 +1,11 @@
 #pragma once
 
 #include "core/result.h"
+#include "core/span.h"
 #include "core/types.h"
 #include "sim/sim.h"
+
+#include <vulkan/vulkan.h>
 
 namespace platform {
 
@@ -11,11 +14,13 @@ namespace platform {
 /// One window per process in M0. The header exposes no SDL types.
 class Window {
 public:
-    /// Open a Vulkan-capable, resizable window with relative mouse look enabled.
+    /// Open a Vulkan-capable, resizable window. When `capture_mouse` is true the
+    /// cursor is grabbed for relative look, which suits interactive play but not
+    /// a short automated run.
     /// # Errors
     /// Returns a static error string if SDL or window creation fails.
     [[nodiscard]] static core::Result<Window, const char*> open(const char* title, u32 width,
-                                                                u32 height);
+                                                                u32 height, bool capture_mouse);
 
     ~Window();
     Window(Window&& other) noexcept;
@@ -41,9 +46,14 @@ public:
     /// the motion accumulated since the last pump. Clears the motion accumulator.
     [[nodiscard]] sim::InputCmd capture_input(sim::TickId tick);
 
-    /// The underlying SDL_Window as an opaque pointer, for the gpu module to
-    /// create a Vulkan surface. Null after this window has been moved from.
-    [[nodiscard]] void* native_handle() const { return window_; }
+    /// The Vulkan instance extensions this window needs. Points into SDL-owned
+    /// storage that lives for the duration of the process.
+    [[nodiscard]] core::Span<const char* const> vulkan_instance_extensions() const;
+
+    /// Create a Vulkan surface for this window on `instance`.
+    /// # Errors
+    /// Returns a static error string if surface creation fails.
+    [[nodiscard]] core::Result<VkSurfaceKHR, const char*> create_surface(VkInstance instance) const;
 
 private:
     Window() = default;

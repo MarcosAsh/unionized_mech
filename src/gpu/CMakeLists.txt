@@ -3,7 +3,9 @@ FetchContent_MakeAvailable(volk)
 
 add_library(gpu STATIC
     gpu_instance.cpp
-    gpu_device.cpp)
+    gpu_device.cpp
+    gpu_swapchain.cpp
+    gpu_renderer.cpp)
 
 target_include_directories(gpu PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
