@@ -79,6 +79,7 @@ struct World {
     f32 vel_y = 0.0f;
     f32 vel_z = 0.0f;
     u8 on_ground = 0;  ///< 1 while standing on the floor.
+    u8 ducked = 0;     ///< 1 while crouching or sliding.
 };
 
 static_assert(std::is_trivially_copyable_v<World>);

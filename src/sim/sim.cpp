@@ -23,6 +23,9 @@ constexpr f32 STOP_SPEED = 1.5f;       // floor on friction so slow stops are cr
 // Player collision hull, an axis-aligned box, feet at cam_y (Source lineage).
 constexpr f32 HULL_HALF_WIDTH = 0.4f;
 constexpr f32 HULL_HEIGHT = 1.8f;
+constexpr f32 DUCK_HEIGHT = 1.0f;      // hull height while crouched
+constexpr f32 SLIDE_FRICTION = 1.5f;   // low friction so a slide keeps momentum
+constexpr f32 SLIDE_MIN_SPEED = 5.0f;  // crouch above this speed becomes a slide
 
 u64 fnv1a(u64 h, const void* data, u64 n) {
     const u8* p = static_cast<const u8*>(data);
@@ -33,11 +36,10 @@ u64 fnv1a(u64 h, const void* data, u64 n) {
     return h;
 }
 
-// True when the player hull at (x, y, z) overlaps box `b`.
-bool hull_overlaps(f32 x, f32 y, f32 z, const Aabb& b) {
+// True when a player hull of `height` at (x, y, z) overlaps box `b`.
+bool hull_overlaps(f32 x, f32 y, f32 z, f32 height, const Aabb& b) {
     return x - HULL_HALF_WIDTH < b.max_x && x + HULL_HALF_WIDTH > b.min_x && y < b.max_y &&
-           y + HULL_HEIGHT > b.min_y && z - HULL_HALF_WIDTH < b.max_z &&
-           z + HULL_HALF_WIDTH > b.min_z;
+           y + height > b.min_y && z - HULL_HALF_WIDTH < b.max_z && z + HULL_HALF_WIDTH > b.min_z;
 }
 
 const Aabb LEVEL[] = {
@@ -84,13 +86,18 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     }
 
     const bool grounded = prev.on_ground != 0;
+    const bool ducked = button_down(cmd.buttons, Button::Crouch);
+    const f32 hull_h = ducked ? DUCK_HEIGHT : HULL_HEIGHT;
 
-    // Ground friction (Quake/Source style).
+    // Ground friction (Quake/Source style). Crouching at speed slides, which
+    // swaps in a low friction so momentum carries.
     if (grounded) {
         const f32 speed = sim_sqrt(next.vel_x * next.vel_x + next.vel_z * next.vel_z);
         if (speed > 0.0f) {
+            const bool sliding = ducked && speed > SLIDE_MIN_SPEED;
+            const f32 friction = sliding ? SLIDE_FRICTION : FRICTION;
             const f32 control = speed < STOP_SPEED ? STOP_SPEED : speed;
-            f32 newspeed = speed - control * FRICTION * SIM_DT;
+            f32 newspeed = speed - control * friction * SIM_DT;
             if (newspeed < 0.0f) {
                 newspeed = 0.0f;
             }
@@ -129,7 +136,7 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     next.cam_x += next.vel_x * SIM_DT;
     for (u64 i = 0; i < boxes.size(); ++i) {
         const Aabb& b = boxes[i];
-        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, b)) {
+        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, hull_h, b)) {
             next.cam_x = next.vel_x > 0.0f ? b.min_x - HULL_HALF_WIDTH : b.max_x + HULL_HALF_WIDTH;
             next.vel_x = 0.0f;
         }
@@ -138,7 +145,7 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     next.cam_z += next.vel_z * SIM_DT;
     for (u64 i = 0; i < boxes.size(); ++i) {
         const Aabb& b = boxes[i];
-        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, b)) {
+        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, hull_h, b)) {
             next.cam_z = next.vel_z > 0.0f ? b.min_z - HULL_HALF_WIDTH : b.max_z + HULL_HALF_WIDTH;
             next.vel_z = 0.0f;
         }
@@ -148,12 +155,12 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     next.cam_y += next.vel_y * SIM_DT;
     for (u64 i = 0; i < boxes.size(); ++i) {
         const Aabb& b = boxes[i];
-        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, b)) {
+        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, hull_h, b)) {
             if (next.vel_y <= 0.0f) {
                 next.cam_y = b.max_y;  // land on top
                 grounded_now = true;
             } else {
-                next.cam_y = b.min_y - HULL_HEIGHT;  // bumped head
+                next.cam_y = b.min_y - hull_h;  // bumped head
             }
             next.vel_y = 0.0f;
         }
@@ -167,6 +174,7 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         grounded_now = true;
     }
     next.on_ground = grounded_now ? 1 : 0;
+    next.ducked = ducked ? 1 : 0;
 }
 
 u32 FixedTimestep::advance(f64 elapsed, u32 max_ticks) {
@@ -196,6 +204,7 @@ u64 hash(const World& w) {
     h = fnv1a(h, &w.vel_y, sizeof(w.vel_y));
     h = fnv1a(h, &w.vel_z, sizeof(w.vel_z));
     h = fnv1a(h, &w.on_ground, sizeof(w.on_ground));
+    h = fnv1a(h, &w.ducked, sizeof(w.ducked));
     return h;
 }
 

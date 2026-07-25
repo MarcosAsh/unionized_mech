@@ -155,10 +155,11 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const f32 yaw = angle_lerp(prev.cam_yaw, curr.cam_yaw, alpha);
     const f32 pitch = lerp(prev.cam_pitch, curr.cam_pitch, alpha);
 
+    const f32 eye_height = curr.ducked != 0 ? 0.9f : 1.7f;
     const f32 aspect =
         static_cast<f32>(frame.extent.width) / static_cast<f32>(frame.extent.height);
     const Mat4 proj = perspective(1.2217f, aspect, 0.1f, 500.0f);
-    const Mat4 view = view_fps(cam_x, cam_y + 1.7f, cam_z, yaw, pitch);
+    const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch);
     const Mat4 view_proj = mat4_mul(proj, view);
 
     VkRenderingAttachmentInfo color{};
