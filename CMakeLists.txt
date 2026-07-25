@@ -21,6 +21,9 @@ target_compile_options(engine_options INTERFACE
 target_link_options(engine_options INTERFACE
     $<$<CONFIG:Debug>:-fsanitize=address,undefined>)
 
+# volk provides the Vulkan entry points at runtime, so no static prototypes.
+target_compile_definitions(engine_options INTERFACE VK_NO_PROTOTYPES)
+
 include(dependencies)
 include(compile_shaders)
 
@@ -30,6 +33,7 @@ FetchContent_MakeAvailable(VulkanHeaders)
 add_subdirectory(src/core)
 add_subdirectory(src/sim)
 add_subdirectory(src/platform)
+add_subdirectory(src/gpu)
 
 add_executable(unionized_mech src/main.cpp)
 target_link_libraries(unionized_mech PRIVATE platform)
@@ -37,6 +41,10 @@ target_link_libraries(unionized_mech PRIVATE platform)
 # Headless determinism runner: steps the sim and prints the world hash.
 add_executable(um_headless tools/headless.cpp)
 target_link_libraries(um_headless PRIVATE sim)
+
+# Headless Vulkan bring-up check: real device, validation active, no window.
+add_executable(gpu_probe tools/gpu_probe.cpp)
+target_link_libraries(gpu_probe PRIVATE gpu)
 
 enable_testing()
 
@@ -48,6 +56,6 @@ add_executable(sim_tests tests/sim_tests.cpp)
 target_link_libraries(sim_tests PRIVATE sim)
 add_test(NAME sim_tests COMMAND sim_tests)
 
-# Module libraries land in later M0 commits:
-#   add_subdirectory(src/gpu)       # instance, device, swapchain, bindless
+# Still to land in M0:
+#   gpu swapchain, frame contexts, allocator, bindless set (next: clear + present)
 #   add_subdirectory(src/render)    # triangle pass, interpolated draw
