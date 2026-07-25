@@ -17,4 +17,8 @@ namespace sim {
 /// Deterministic cosine of `x` radians.
 [[nodiscard]] f32 sim_cos(f32 x);
 
+/// Square root via the hardware instruction. IEEE-754 mandates it be correctly
+/// rounded, so it is bit-identical everywhere, unlike libm's transcendentals.
+[[nodiscard]] f32 sim_sqrt(f32 x);
+
 }  // namespace sim

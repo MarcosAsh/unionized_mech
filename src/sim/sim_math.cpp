@@ -32,4 +32,6 @@ f32 sim_sin(f32 x) {
 
 f32 sim_cos(f32 x) { return sim_sin(x + HALF_PI); }
 
+f32 sim_sqrt(f32 x) { return __builtin_sqrtf(x); }
+
 }  // namespace sim

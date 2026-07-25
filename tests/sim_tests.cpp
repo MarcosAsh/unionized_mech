@@ -45,7 +45,7 @@ static void test_replay_twice_identical() {
 static void test_simulate_is_pure() {
     World w{};
     w.cam_x = 3.0f;
-    w.spin_angle = 1.0f;
+    w.vel_x = 1.0f;
     const InputCmd cmd = scripted(7);
 
     World a{};
@@ -55,7 +55,7 @@ static void test_simulate_is_pure() {
 
     ASSERT(hash(a) == hash(b));
     ASSERT(w.cam_x == 3.0f);
-    ASSERT(w.spin_angle == 1.0f);
+    ASSERT(w.vel_x == 1.0f);
 }
 
 static void test_tick_advances() {

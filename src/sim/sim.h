@@ -64,17 +64,20 @@ static_assert(alignof(InputCmd) == 4, "InputCmd alignment must stay wire-stable"
 static_assert(std::is_trivially_copyable_v<InputCmd>);
 static_assert(std::is_standard_layout_v<InputCmd>);
 
-/// The whole simulation state for M0: a camera and one rotating transform.
-/// Scalars stand in for vectors and quaternions until the M1 math module lands.
-/// Trivially copyable so it can be snapshotted and hashed by value.
+/// The whole simulation state. Scalars stand in for vectors and quaternions
+/// until the M1 math module lands. Trivially copyable so it can be snapshotted
+/// and hashed by value.
 struct World {
     TickId tick;
-    f32 cam_x = 0.0f;
-    f32 cam_y = 0.0f;
-    f32 cam_z = 0.0f;
-    f32 cam_yaw = 0.0f;     ///< Radians, accumulated. Trig lives in render only.
-    f32 cam_pitch = 0.0f;   ///< Radians, clamped.
-    f32 spin_angle = 0.0f;  ///< Radians, the rotating transform M0 draws.
+    f32 cam_x = 0.0f;      ///< Feet position, world X.
+    f32 cam_y = 0.0f;      ///< Feet height above the floor.
+    f32 cam_z = 0.0f;      ///< Feet position, world Z.
+    f32 cam_yaw = 0.0f;    ///< Radians, accumulated. Trig lives in render only.
+    f32 cam_pitch = 0.0f;  ///< Radians, clamped.
+    f32 vel_x = 0.0f;      ///< Velocity, world units per second.
+    f32 vel_y = 0.0f;
+    f32 vel_z = 0.0f;
+    u8 on_ground = 0;  ///< 1 while standing on the floor.
 };
 
 static_assert(std::is_trivially_copyable_v<World>);

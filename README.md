@@ -9,8 +9,9 @@ The full design contract is in `CLAUDE.md`. How the code fits together is in
 
 ## Status
 
-M0, the foundation. Build system and the core module are up. Everything else is
-in progress.
+M0 foundation complete: fixed-step deterministic simulation, bindless
+GPU-driven rendering into a first-person scene, and determinism, timing, and
+hot-reload instrumentation. M3, the character controller, is in progress.
 
 ## Building on Ubuntu
 
