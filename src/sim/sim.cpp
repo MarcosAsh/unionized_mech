@@ -1,5 +1,7 @@
 #include "sim/sim.h"
 
+#include "sim/sim_math.h"
+
 namespace sim {
 
 namespace {
@@ -29,7 +31,7 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
 
     next.spin_angle = prev.spin_angle + SPIN_RATE;
 
-    next.cam_yaw = prev.cam_yaw + static_cast<f32>(cmd.look_dx) * LOOK_SCALE;
+    next.cam_yaw = wrap_angle(prev.cam_yaw + static_cast<f32>(cmd.look_dx) * LOOK_SCALE);
 
     f32 pitch = prev.cam_pitch + static_cast<f32>(cmd.look_dy) * LOOK_SCALE;
     if (pitch > PITCH_LIMIT) {
@@ -40,11 +42,17 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     }
     next.cam_pitch = pitch;
 
-    // World-axis movement for M0. Yaw-relative movement waits for M3 and the
-    // deterministic trig in sim_math.
+    // Yaw-relative movement using deterministic trig. At yaw 0 the camera faces
+    // -Z, so forward is (sin yaw, 0, -cos yaw) and right is (cos yaw, 0, sin yaw).
+    const f32 s = sim_sin(next.cam_yaw);
+    const f32 c = sim_cos(next.cam_yaw);
+    const f32 move_x = static_cast<f32>(cmd.move_x);
+    const f32 move_y = static_cast<f32>(cmd.move_y);
+    const f32 wish_x = c * move_x + s * move_y;
+    const f32 wish_z = s * move_x - c * move_y;
     const f32 step = MOVE_SPEED * SIM_DT;
-    next.cam_x = prev.cam_x + static_cast<f32>(cmd.move_x) * step;
-    next.cam_z = prev.cam_z + static_cast<f32>(cmd.move_y) * step;
+    next.cam_x = prev.cam_x + wish_x * step;
+    next.cam_z = prev.cam_z + wish_z * step;
 }
 
 u64 hash(const World& w) {

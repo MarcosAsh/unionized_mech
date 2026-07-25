@@ -34,9 +34,10 @@ add_subdirectory(src/core)
 add_subdirectory(src/sim)
 add_subdirectory(src/platform)
 add_subdirectory(src/gpu)
+add_subdirectory(src/render)
 
 add_executable(unionized_mech src/main.cpp tools/sanitizer_suppressions.cpp)
-target_link_libraries(unionized_mech PRIVATE platform gpu)
+target_link_libraries(unionized_mech PRIVATE platform gpu render)
 
 # Headless determinism runner: steps the sim and prints the world hash.
 add_executable(um_headless tools/headless.cpp)

@@ -70,8 +70,12 @@ Allocation Allocator::allocate(const VkMemoryRequirements& req, VkMemoryProperty
     ASSERT_MSG(vkAllocateMemory(device_, &ai, nullptr, &block.memory) == VK_SUCCESS,
                "vkAllocateMemory");
 
-    const bool host_visible = (props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
-    if (host_visible) {
+    // Map from the memory type's own flags, not the request. On unified memory a
+    // device-local type is also host-visible, and its blocks may later be reused
+    // for host-visible allocations, so those blocks must be mapped.
+    const bool type_host_visible =
+        (mem_props_.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+    if (type_host_visible) {
         ASSERT_MSG(vkMapMemory(device_, block.memory, 0, VK_WHOLE_SIZE, 0, &block.mapped) ==
                        VK_SUCCESS,
                    "vkMapMemory");

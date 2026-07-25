@@ -4,9 +4,8 @@
 #include "core/types.h"
 #include "gpu/gpu.h"
 #include "platform/platform.h"
+#include "render/render.h"
 #include "sim/sim.h"
-
-#include <cmath>
 
 namespace {
 
@@ -82,6 +81,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     gpu::Renderer renderer = static_cast<gpu::Renderer&&>(rend_result.value());
+
+    render::Scene scene = render::Scene::create(renderer, scratch);
+    scratch.reset();
     core::log_infof("window %ux%u. WASD moves, mouse looks, Escape quits.", win.width(),
                     win.height());
 
@@ -115,9 +117,12 @@ int main(int argc, char** argv) {
             ++total_ticks;
         }
 
-        const f32 a = world.spin_angle;
-        renderer.render_clear(0.5f + 0.5f * sinf(a), 0.5f + 0.5f * sinf(a + 2.094f),
-                              0.5f + 0.5f * sinf(a + 4.188f), win.width(), win.height());
+        const gpu::Frame gpu_frame = renderer.begin_frame(win.width(), win.height());
+        if (gpu_frame.valid) {
+            scene.draw(gpu_frame, world.cam_x, world.cam_y, world.cam_z, world.cam_yaw,
+                       world.cam_pitch);
+            renderer.end_frame();
+        }
 
         frame.reset();
         ++frames;
