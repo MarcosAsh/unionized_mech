@@ -8,6 +8,7 @@
 
 #include <volk.h>
 
+#include <cmath>
 #include <sys/stat.h>
 
 namespace render {
@@ -156,10 +157,20 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const f32 pitch = lerp(prev.cam_pitch, curr.cam_pitch, alpha);
 
     const f32 eye_height = curr.ducked != 0 ? 0.9f : 1.7f;
+
+    // Tilt the camera while wallrunning, leaning by which side the wall is on.
+    f32 roll = 0.0f;
+    if (curr.state == sim::MoveState::Wallrun) {
+        const f32 facing_x = std::sin(yaw);
+        const f32 facing_z = -std::cos(yaw);
+        const f32 side = facing_x * curr.wall_nz - facing_z * curr.wall_nx;
+        roll = side * 0.15f;
+    }
+
     const f32 aspect =
         static_cast<f32>(frame.extent.width) / static_cast<f32>(frame.extent.height);
     const Mat4 proj = perspective(1.2217f, aspect, 0.1f, 500.0f);
-    const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch);
+    const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch, roll);
     const Mat4 view_proj = mat4_mul(proj, view);
 
     VkRenderingAttachmentInfo color{};

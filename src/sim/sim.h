@@ -65,6 +65,9 @@ static_assert(alignof(InputCmd) == 4, "InputCmd alignment must stay wire-stable"
 static_assert(std::is_trivially_copyable_v<InputCmd>);
 static_assert(std::is_standard_layout_v<InputCmd>);
 
+/// The character's movement mode this tick.
+enum class MoveState : u8 { Ground, Slide, Air, Wallrun };
+
 /// The whole simulation state. Scalars stand in for vectors and quaternions
 /// until the M1 math module lands. Trivially copyable so it can be snapshotted
 /// and hashed by value.
@@ -78,9 +81,13 @@ struct World {
     f32 vel_x = 0.0f;      ///< Velocity, world units per second.
     f32 vel_y = 0.0f;
     f32 vel_z = 0.0f;
-    u8 on_ground = 0;     ///< 1 while standing on the floor.
-    u8 ducked = 0;        ///< 1 while crouching or sliding.
-    u8 air_jumps = 0;     ///< Remaining mid-air jumps (double jump).
+    f32 wall_nx = 0.0f;    ///< Wall normal while wallrunning, for camera tilt.
+    f32 wall_nz = 0.0f;
+    u16 wallrun_ticks = 0;      ///< Ticks spent on the current wall.
+    MoveState state = MoveState::Air;
+    u8 on_ground = 0;      ///< 1 while standing on the floor.
+    u8 ducked = 0;         ///< 1 while crouching or sliding.
+    u8 air_jumps = 0;      ///< Remaining mid-air jumps (double jump).
     u8 jump_was_down = 0;  ///< Jump button state last tick, for edge detection.
 };
 

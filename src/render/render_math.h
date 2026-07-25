@@ -65,9 +65,10 @@ struct Mat4 {
     return out;
 }
 
-/// First-person view matrix from a position and yaw/pitch, matching the sim's
-/// convention: yaw 0 faces -Z, positive pitch looks up.
-[[nodiscard]] inline Mat4 view_fps(f32 px, f32 py, f32 pz, f32 yaw, f32 pitch) {
+/// First-person view matrix from a position, yaw/pitch, and a roll (for wallrun
+/// camera tilt), matching the sim's convention: yaw 0 faces -Z, positive pitch
+/// looks up.
+[[nodiscard]] inline Mat4 view_fps(f32 px, f32 py, f32 pz, f32 yaw, f32 pitch, f32 roll) {
     const f32 cp = std::cos(pitch);
     const f32 sp = std::sin(pitch);
     const f32 cy = std::cos(yaw);
@@ -84,11 +85,26 @@ struct Mat4 {
         rx /= rl;
         rz /= rl;
     }
-    const f32 ry = 0.0f;
+    f32 ry = 0.0f;
 
-    const f32 ux = ry * fz - rz * fy;
-    const f32 uy = rz * fx - rx * fz;
-    const f32 uz = rx * fy - ry * fx;
+    f32 ux = ry * fz - rz * fy;
+    f32 uy = rz * fx - rx * fz;
+    f32 uz = rx * fy - ry * fx;
+
+    // Roll the right and up vectors around the forward axis.
+    if (roll != 0.0f) {
+        const f32 cr = std::cos(roll);
+        const f32 sr = std::sin(roll);
+        const f32 nrx = rx * cr + ux * sr;
+        const f32 nry = ry * cr + uy * sr;
+        const f32 nrz = rz * cr + uz * sr;
+        ux = ux * cr - rx * sr;
+        uy = uy * cr - ry * sr;
+        uz = uz * cr - rz * sr;
+        rx = nrx;
+        ry = nry;
+        rz = nrz;
+    }
 
     Mat4 out{};
     out.m[0] = rx;
