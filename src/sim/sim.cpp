@@ -26,14 +26,21 @@ constexpr f32 HULL_HEIGHT = 1.8f;
 constexpr f32 DUCK_HEIGHT = 1.0f;      // hull height while crouched
 constexpr f32 SLIDE_FRICTION = 1.5f;   // low friction so a slide keeps momentum
 constexpr f32 SLIDE_MIN_SPEED = 5.0f;  // crouch above this speed becomes a slide
+constexpr f32 SLIDE_BOOST = 4.0f;      // speed added when a slide begins (TF2 feel)
+constexpr f32 SLIDE_MAX_SPEED = 14.0f; // cap on the slide boost
 
-// Wallrun tuning.
-constexpr f32 WALL_DETECT_DIST = 0.15f;  // how close a wall must be to grab
-constexpr f32 WALLRUN_MIN_SPEED = 4.0f;  // along-wall speed needed to start
-constexpr f32 WALLRUN_GRAVITY = 6.0f;    // reduced gravity while wallrunning
-constexpr f32 WALLRUN_MAX_FALL = 3.0f;   // cap downward speed on the wall
-constexpr f32 WALLJUMP_UP = 6.0f;        // upward launch off the wall
-constexpr f32 WALLJUMP_PUSH = 6.0f;      // push away from the wall
+// Double jump.
+constexpr u8 MAX_AIR_JUMPS = 1;  // one extra jump in the air
+
+// Wallrun. Speed builds the longer you run, which is the Titanfall signature.
+constexpr f32 WALL_DETECT_DIST = 0.15f;   // how close a wall must be to grab
+constexpr f32 WALLRUN_MIN_SPEED = 4.0f;   // along-wall speed needed to start
+constexpr f32 WALLRUN_ACCEL = 6.0f;       // along-wall acceleration while running
+constexpr f32 WALLRUN_MAX_SPEED = 14.0f;  // speed a wallrun builds toward
+constexpr f32 WALLRUN_GRAVITY = 6.0f;     // reduced gravity while wallrunning
+constexpr f32 WALLRUN_MAX_FALL = 3.0f;    // cap downward speed on the wall
+constexpr f32 WALLJUMP_UP = 6.0f;         // upward launch off the wall
+constexpr f32 WALLJUMP_PUSH = 6.0f;       // push away from the wall
 
 u64 fnv1a(u64 h, const void* data, u64 n) {
     const u8* p = static_cast<const u8*>(data);
@@ -175,8 +182,25 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         }
     }
 
-    // Wallrun: while airborne and moving along a nearby wall, stick to it, run
-    // with reduced gravity, and allow a launch off it.
+    // Slide start boost. Entering a slide adds a burst of speed so a slide is an
+    // offensive, speed-building move rather than a way to stop (the TF2 feel).
+    const f32 prev_speed = sim_sqrt(prev.vel_x * prev.vel_x + prev.vel_z * prev.vel_z);
+    const bool was_sliding = prev.ducked != 0 && prev.on_ground != 0 && prev_speed > SLIDE_MIN_SPEED;
+    if (ducked && grounded && !was_sliding) {
+        const f32 hs = sim_sqrt(next.vel_x * next.vel_x + next.vel_z * next.vel_z);
+        if (hs > SLIDE_MIN_SPEED) {
+            f32 boosted = hs + SLIDE_BOOST;
+            if (boosted > SLIDE_MAX_SPEED) {
+                boosted = SLIDE_MAX_SPEED;
+            }
+            const f32 scale = boosted / hs;
+            next.vel_x *= scale;
+            next.vel_z *= scale;
+        }
+    }
+
+    // Wallrun: while airborne and moving along a nearby wall, stick to it, build
+    // speed the longer you run, and allow a launch off it.
     f32 wall_nx = 0.0f;
     f32 wall_nz = 0.0f;
     bool wallrunning = false;
@@ -188,10 +212,15 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         const f32 along = sim_sqrt(along_x * along_x + along_z * along_z);
         if (along > WALLRUN_MIN_SPEED && into < 1.0f) {
             wallrunning = true;
-            if (into < 0.0f) {  // cancel motion into the wall so you hug it
-                next.vel_x -= into * wall_nx;
-                next.vel_z -= into * wall_nz;
+            // Hug the wall and accelerate along it, up to the wallrun cap.
+            const f32 dir_x = along_x / along;
+            const f32 dir_z = along_z / along;
+            f32 new_along = along + WALLRUN_ACCEL * SIM_DT;
+            if (new_along > WALLRUN_MAX_SPEED) {
+                new_along = WALLRUN_MAX_SPEED;
             }
+            next.vel_x = dir_x * new_along;
+            next.vel_z = dir_z * new_along;
         }
     }
 
@@ -200,15 +229,34 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         next.vel_y = -WALLRUN_MAX_FALL;
     }
 
-    if (button_down(cmd.buttons, Button::Jump)) {
-        if (grounded) {
+    // Jumping. Ground jump auto-hops while held; wall jump and double jump fire on
+    // a fresh press. Touching the ground or a wall refills the air jump.
+    const bool jump_down = button_down(cmd.buttons, Button::Jump);
+    const bool jump_pressed = jump_down && prev.jump_was_down == 0;
+    if (grounded) {
+        next.air_jumps = MAX_AIR_JUMPS;
+        if (jump_down) {
             next.vel_y = JUMP_VELOCITY;
-        } else if (wallrunning) {
+        }
+    } else if (wallrunning) {
+        next.air_jumps = MAX_AIR_JUMPS;
+        if (jump_pressed) {
             next.vel_y = WALLJUMP_UP;
             next.vel_x += wall_nx * WALLJUMP_PUSH;
             next.vel_z += wall_nz * WALLJUMP_PUSH;
         }
+    } else if (jump_pressed && next.air_jumps > 0) {
+        // Double jump. Redirect momentum toward the current input so you can
+        // change direction in the air, then relaunch.
+        if (wish_len > 0.0f) {
+            const f32 hspeed = sim_sqrt(next.vel_x * next.vel_x + next.vel_z * next.vel_z);
+            next.vel_x = wish_x * hspeed;
+            next.vel_z = wish_z * hspeed;
+        }
+        next.vel_y = JUMP_VELOCITY;
+        next.air_jumps -= 1;
     }
+    next.jump_was_down = jump_down ? 1 : 0;
 
     // Move and slide, one axis at a time, against the static boxes. Resolving
     // per axis lets the player slide along walls and stand on box tops.
@@ -286,6 +334,8 @@ u64 hash(const World& w) {
     h = fnv1a(h, &w.vel_z, sizeof(w.vel_z));
     h = fnv1a(h, &w.on_ground, sizeof(w.on_ground));
     h = fnv1a(h, &w.ducked, sizeof(w.ducked));
+    h = fnv1a(h, &w.air_jumps, sizeof(w.air_jumps));
+    h = fnv1a(h, &w.jump_was_down, sizeof(w.jump_was_down));
     return h;
 }
 
