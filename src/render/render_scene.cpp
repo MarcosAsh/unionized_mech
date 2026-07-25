@@ -58,14 +58,14 @@ void add_quad(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 x, f32 
     }
 }
 
-void add_cube(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 cx, f32 cy, f32 cz, f32 h,
-              f32 r, f32 g, f32 b) {
+void add_box(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 x0, f32 y0, f32 z0, f32 x1,
+             f32 y1, f32 z1, f32 r, f32 g, f32 b) {
     const u32 base = static_cast<u32>(verts.size());
-    const f32 sx[8] = {-1, 1, 1, -1, -1, 1, 1, -1};
-    const f32 sy[8] = {-1, -1, 1, 1, -1, -1, 1, 1};
-    const f32 sz[8] = {-1, -1, -1, -1, 1, 1, 1, 1};
+    const f32 xs[8] = {x0, x1, x1, x0, x0, x1, x1, x0};
+    const f32 ys[8] = {y0, y0, y1, y1, y0, y0, y1, y1};
+    const f32 zs[8] = {z0, z0, z0, z0, z1, z1, z1, z1};
     for (u32 i = 0; i < 8; ++i) {
-        add_vertex(verts, cx + sx[i] * h, cy + sy[i] * h, cz + sz[i] * h, r, g, b);
+        add_vertex(verts, xs[i], ys[i], zs[i], r, g, b);
     }
     const u32 faces[36] = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 4, 0, 3, 4, 3, 7,
                            1, 5, 6, 1, 6, 2, 3, 2, 6, 3, 6, 7, 4, 5, 1, 4, 1, 0};
@@ -90,12 +90,12 @@ void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
 
     const f32 palette[6][3] = {{0.85f, 0.3f, 0.3f}, {0.3f, 0.75f, 0.4f}, {0.35f, 0.5f, 0.9f},
                                {0.9f, 0.75f, 0.3f}, {0.7f, 0.4f, 0.85f}, {0.3f, 0.8f, 0.8f}};
-    const f32 spots[10][2] = {{-14, -14}, {14, -14}, {-14, 14}, {14, 14}, {0, -18},
-                              {0, 18},    {-18, 0},  {18, 0},   {-6, 6},  {8, -4}};
-    for (u32 c = 0; c < 10; ++c) {
-        const f32 h = 1.0f + static_cast<f32>(c % 4);
+    const core::Span<const sim::Aabb> boxes = sim::level_boxes();
+    for (u64 c = 0; c < boxes.size(); ++c) {
+        const sim::Aabb& b = boxes[c];
         const f32* col = palette[c % 6];
-        add_cube(verts, indices, spots[c][0], h, spots[c][1], h, col[0], col[1], col[2]);
+        add_box(verts, indices, b.min_x, b.min_y, b.min_z, b.max_x, b.max_y, b.max_z, col[0],
+                col[1], col[2]);
     }
 }
 

@@ -20,6 +20,10 @@ constexpr f32 AIR_MAX_SPEED = 1.5f;    // capped air wish speed enables airstraf
 constexpr f32 FRICTION = 6.0f;         // ground friction
 constexpr f32 STOP_SPEED = 1.5f;       // floor on friction so slow stops are crisp
 
+// Player collision hull, an axis-aligned box, feet at cam_y (Source lineage).
+constexpr f32 HULL_HALF_WIDTH = 0.4f;
+constexpr f32 HULL_HEIGHT = 1.8f;
+
 u64 fnv1a(u64 h, const void* data, u64 n) {
     const u8* p = static_cast<const u8*>(data);
     for (u64 i = 0; i < n; ++i) {
@@ -29,7 +33,26 @@ u64 fnv1a(u64 h, const void* data, u64 n) {
     return h;
 }
 
+// True when the player hull at (x, y, z) overlaps box `b`.
+bool hull_overlaps(f32 x, f32 y, f32 z, const Aabb& b) {
+    return x - HULL_HALF_WIDTH < b.max_x && x + HULL_HALF_WIDTH > b.min_x && y < b.max_y &&
+           y + HULL_HEIGHT > b.min_y && z - HULL_HALF_WIDTH < b.max_z &&
+           z + HULL_HALF_WIDTH > b.min_z;
+}
+
+const Aabb LEVEL[] = {
+    {-15.0f, 0.0f, -15.0f, -13.0f, 2.0f, -13.0f}, {12.0f, 0.0f, -16.0f, 16.0f, 4.0f, -12.0f},
+    {-17.0f, 0.0f, 11.0f, -11.0f, 6.0f, 17.0f},   {10.0f, 0.0f, 10.0f, 18.0f, 8.0f, 18.0f},
+    {-1.0f, 0.0f, -19.0f, 1.0f, 2.0f, -17.0f},    {-2.0f, 0.0f, 16.0f, 2.0f, 4.0f, 20.0f},
+    {-21.0f, 0.0f, -3.0f, -15.0f, 6.0f, 3.0f},    {14.0f, 0.0f, -4.0f, 22.0f, 8.0f, 4.0f},
+    {-7.0f, 0.0f, 5.0f, -5.0f, 2.0f, 7.0f},       {6.0f, 0.0f, -6.0f, 10.0f, 4.0f, -2.0f},
+};
+
 }  // namespace
+
+core::Span<const Aabb> level_boxes() {
+    return core::Span<const Aabb>(LEVEL, sizeof(LEVEL) / sizeof(LEVEL[0]));
+}
 
 void simulate(const World& prev, const InputCmd& cmd, World& next) {
     next = prev;
@@ -99,20 +122,51 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         next.vel_y = JUMP_VELOCITY;
     }
 
-    next.cam_x += next.vel_x * SIM_DT;
-    next.cam_y += next.vel_y * SIM_DT;
-    next.cam_z += next.vel_z * SIM_DT;
+    // Move and slide, one axis at a time, against the static boxes. Resolving
+    // per axis lets the player slide along walls and stand on box tops.
+    const core::Span<const Aabb> boxes = level_boxes();
 
-    // Floor at y = 0. Cube collision arrives in the next M3 step.
+    next.cam_x += next.vel_x * SIM_DT;
+    for (u64 i = 0; i < boxes.size(); ++i) {
+        const Aabb& b = boxes[i];
+        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, b)) {
+            next.cam_x = next.vel_x > 0.0f ? b.min_x - HULL_HALF_WIDTH : b.max_x + HULL_HALF_WIDTH;
+            next.vel_x = 0.0f;
+        }
+    }
+
+    next.cam_z += next.vel_z * SIM_DT;
+    for (u64 i = 0; i < boxes.size(); ++i) {
+        const Aabb& b = boxes[i];
+        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, b)) {
+            next.cam_z = next.vel_z > 0.0f ? b.min_z - HULL_HALF_WIDTH : b.max_z + HULL_HALF_WIDTH;
+            next.vel_z = 0.0f;
+        }
+    }
+
+    bool grounded_now = false;
+    next.cam_y += next.vel_y * SIM_DT;
+    for (u64 i = 0; i < boxes.size(); ++i) {
+        const Aabb& b = boxes[i];
+        if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, b)) {
+            if (next.vel_y <= 0.0f) {
+                next.cam_y = b.max_y;  // land on top
+                grounded_now = true;
+            } else {
+                next.cam_y = b.min_y - HULL_HEIGHT;  // bumped head
+            }
+            next.vel_y = 0.0f;
+        }
+    }
+
     if (next.cam_y <= 0.0f) {
         next.cam_y = 0.0f;
         if (next.vel_y < 0.0f) {
             next.vel_y = 0.0f;
         }
-        next.on_ground = 1;
-    } else {
-        next.on_ground = 0;
+        grounded_now = true;
     }
+    next.on_ground = grounded_now ? 1 : 0;
 }
 
 u32 FixedTimestep::advance(f64 elapsed, u32 max_ticks) {

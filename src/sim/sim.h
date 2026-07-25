@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/span.h"
 #include "core/types.h"
 
 #include <type_traits>
@@ -81,6 +82,17 @@ struct World {
 };
 
 static_assert(std::is_trivially_copyable_v<World>);
+
+/// An axis-aligned collision box in world space.
+struct Aabb {
+    f32 min_x, min_y, min_z;
+    f32 max_x, max_y, max_z;
+};
+
+/// The static collision boxes for the level. The floor plane at y = 0 is
+/// implicit. Both the simulation and the renderer read these, so what you see is
+/// exactly what you collide with.
+[[nodiscard]] core::Span<const Aabb> level_boxes();
 
 /// Advance the world by one tick. Pure: it reads `prev` and `cmd` and writes
 /// `next`, with no globals and no wall-clock. The same inputs always yield the
