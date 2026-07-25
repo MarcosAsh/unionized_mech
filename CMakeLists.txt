@@ -28,17 +28,26 @@ include(compile_shaders)
 FetchContent_MakeAvailable(VulkanHeaders)
 
 add_subdirectory(src/core)
+add_subdirectory(src/sim)
 
 add_executable(unionized_mech src/main.cpp)
 target_link_libraries(unionized_mech PRIVATE core)
 
+# Headless determinism runner: steps the sim and prints the world hash.
+add_executable(um_headless tools/headless.cpp)
+target_link_libraries(um_headless PRIVATE sim)
+
 enable_testing()
+
 add_executable(core_tests tests/core_tests.cpp)
 target_link_libraries(core_tests PRIVATE core)
 add_test(NAME core_tests COMMAND core_tests)
 
+add_executable(sim_tests tests/sim_tests.cpp)
+target_link_libraries(sim_tests PRIVATE sim)
+add_test(NAME sim_tests COMMAND sim_tests)
+
 # Module libraries land in later M0 commits:
-#   add_subdirectory(src/platform)  # commit 3
-#   add_subdirectory(src/sim)       # commit 4
-#   add_subdirectory(src/gpu)       # commits 5-6
-#   add_subdirectory(src/render)    # commit 7
+#   add_subdirectory(src/platform)  # captures OS input into sim::InputCmd
+#   add_subdirectory(src/gpu)       # instance, device, swapchain, bindless
+#   add_subdirectory(src/render)    # triangle pass, interpolated draw

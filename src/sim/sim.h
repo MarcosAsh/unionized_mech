@@ -1,0 +1,91 @@
+#pragma once
+
+#include "core/types.h"
+
+#include <type_traits>
+
+namespace sim {
+
+/// Identifies one simulation tick. A newtype over u32 so it cannot be confused
+/// with counts or indices.
+struct TickId {
+    u32 raw = 0;
+
+    [[nodiscard]] friend constexpr bool operator==(TickId a, TickId b) {
+        return a.raw == b.raw;
+    }
+    [[nodiscard]] friend constexpr bool operator!=(TickId a, TickId b) {
+        return a.raw != b.raw;
+    }
+};
+
+/// Simulation rate in ticks per second.
+constexpr u32 SIM_HZ = 60;
+
+/// Fixed simulation timestep in seconds. A compile-time constant with identical
+/// bits on every platform.
+constexpr f32 SIM_DT = 1.0f / static_cast<f32>(SIM_HZ);
+
+/// Player action buttons, one bit each, packed into InputCmd::buttons.
+enum class Button : u16 {
+    Jump = 0x0001,
+    Crouch = 0x0002,
+    Fire = 0x0004,
+    Aim = 0x0008,
+    Use = 0x0010,
+    Reload = 0x0020,
+};
+
+/// True when `b` is held in `buttons`.
+[[nodiscard]] constexpr bool button_down(u16 buttons, Button b) {
+    return (buttons & static_cast<u16>(b)) != 0;
+}
+
+/// Set or clear `b` in `buttons`.
+inline void set_button(u16& buttons, Button b, bool down) {
+    const u16 mask = static_cast<u16>(b);
+    buttons = down ? static_cast<u16>(buttons | mask)
+                   : static_cast<u16>(buttons & static_cast<u16>(~mask));
+}
+
+/// One tick of player intent. POD and bit-packable. This is the unit that
+/// crosses the wire in M6, so its layout is fixed and asserted below.
+struct InputCmd {
+    TickId tick;      ///< Tick this command applies to.
+    i16 look_dx = 0;  ///< Raw mouse delta x for this tick.
+    i16 look_dy = 0;  ///< Raw mouse delta y for this tick.
+    i8 move_x = 0;    ///< Strafe intent, -1 left to +1 right.
+    i8 move_y = 0;    ///< Forward intent, -1 back to +1 forward.
+    u16 buttons = 0;  ///< Button bitfield, see Button.
+};
+
+static_assert(sizeof(InputCmd) == 12, "InputCmd layout must stay wire-stable");
+static_assert(alignof(InputCmd) == 4, "InputCmd alignment must stay wire-stable");
+static_assert(std::is_trivially_copyable_v<InputCmd>);
+static_assert(std::is_standard_layout_v<InputCmd>);
+
+/// The whole simulation state for M0: a camera and one rotating transform.
+/// Scalars stand in for vectors and quaternions until the M1 math module lands.
+/// Trivially copyable so it can be snapshotted and hashed by value.
+struct World {
+    TickId tick;
+    f32 cam_x = 0.0f;
+    f32 cam_y = 0.0f;
+    f32 cam_z = 0.0f;
+    f32 cam_yaw = 0.0f;     ///< Radians, accumulated. Trig lives in render only.
+    f32 cam_pitch = 0.0f;   ///< Radians, clamped.
+    f32 spin_angle = 0.0f;  ///< Radians, the rotating transform M0 draws.
+};
+
+static_assert(std::is_trivially_copyable_v<World>);
+
+/// Advance the world by one tick. Pure: it reads `prev` and `cmd` and writes
+/// `next`, with no globals and no wall-clock. The same inputs always yield the
+/// same `next`, on every target platform.
+void simulate(const World& prev, const InputCmd& cmd, World& next);
+
+/// A 64-bit hash of the world state, stable across platforms. Used by the
+/// determinism harness and, later, by the server.
+[[nodiscard]] u64 hash(const World& w);
+
+}  // namespace sim
