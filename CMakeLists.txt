@@ -27,12 +27,17 @@ include(compile_shaders)
 # Smoke-test the FetchContent pins and network path. src/gpu reuses this target.
 FetchContent_MakeAvailable(VulkanHeaders)
 
+add_subdirectory(src/core)
+
 add_executable(unionized_mech src/main.cpp)
-target_link_libraries(unionized_mech PRIVATE engine_options)
-target_include_directories(unionized_mech PRIVATE src)
+target_link_libraries(unionized_mech PRIVATE core)
+
+enable_testing()
+add_executable(core_tests tests/core_tests.cpp)
+target_link_libraries(core_tests PRIVATE core)
+add_test(NAME core_tests COMMAND core_tests)
 
 # Module libraries land in later M0 commits:
-#   add_subdirectory(src/core)      # commit 2
 #   add_subdirectory(src/platform)  # commit 3
 #   add_subdirectory(src/sim)       # commit 4
 #   add_subdirectory(src/gpu)       # commits 5-6
