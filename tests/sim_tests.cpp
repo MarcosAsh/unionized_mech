@@ -94,11 +94,33 @@ static void test_fixed_timestep() {
     ASSERT(count == static_cast<u32>(1.0 / dt));
 }
 
+// Walking into a chest-high ledge vaults it instead of stopping dead. The
+// level's mantle stairs put a 1m step at z=-36 in front of a spawn at z=-34.
+static void test_mantle_vaults_ledge() {
+    World w{};
+    w.cam_x = -28.0f;
+    w.cam_z = -34.0f;
+    bool topped = false;
+    for (u32 i = 0; i < 180; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.move_y = 1;  // yaw 0 faces -Z, straight at the step
+        World next{};
+        simulate(w, c, next);
+        w = next;
+        if (w.on_ground != 0 && w.cam_y == 1.0f) {
+            topped = true;
+        }
+    }
+    ASSERT(topped);
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
     test_tick_advances();
     test_fixed_timestep();
+    test_mantle_vaults_ledge();
     core::log_info("sim_tests: all passed");
     return 0;
 }

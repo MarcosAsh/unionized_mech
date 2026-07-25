@@ -39,6 +39,13 @@ constexpr u8 MAX_AIR_JUMPS = 1;  // one extra jump in the air
 constexpr u8 COYOTE_TICKS = 6;       // jump still works ~100ms after a ledge
 constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landing
 
+// Mantle. Moving into a ledge at chest height vaults it, keeping momentum,
+// instead of stopping dead. The most common flow-killer, removed.
+constexpr f32 MANTLE_REACH = 1.3f;   // highest ledge that can be vaulted
+constexpr f32 MANTLE_MARGIN = 0.5f;  // extra launch speed past the ledge lip
+
+constexpr f32 LAND_IMPACT_DECAY = 0.85f;  // per-tick decay of the landing dip
+
 // Wallrun. Speed builds the longer you run, which is the Titanfall signature.
 constexpr f32 WALL_DETECT_DIST = 0.6f;    // reach to grab a wall from a short gap
 constexpr f32 WALL_PULL = 2.0f;           // gentle pull toward the wall to stay stuck
@@ -110,11 +117,26 @@ bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes, f3
 }
 
 const Aabb LEVEL[] = {
+    // Central plaza: varied blocks for jumping, sliding, and short wallruns.
     {-15.0f, 0.0f, -15.0f, -13.0f, 2.0f, -13.0f}, {12.0f, 0.0f, -16.0f, 16.0f, 4.0f, -12.0f},
     {-17.0f, 0.0f, 11.0f, -11.0f, 6.0f, 17.0f},   {10.0f, 0.0f, 10.0f, 18.0f, 8.0f, 18.0f},
     {-1.0f, 0.0f, -19.0f, 1.0f, 2.0f, -17.0f},    {-2.0f, 0.0f, 16.0f, 2.0f, 4.0f, 20.0f},
     {-21.0f, 0.0f, -3.0f, -15.0f, 6.0f, 3.0f},    {14.0f, 0.0f, -4.0f, 22.0f, 8.0f, 4.0f},
     {-7.0f, 0.0f, 5.0f, -5.0f, 2.0f, 7.0f},       {6.0f, 0.0f, -6.0f, 10.0f, 4.0f, -2.0f},
+    // Wallrun gauntlet, east. Parallel offset walls: run the inner face, wall
+    // jump across the gap to the next, zig-zag down the line.
+    {20.0f, 0.0f, 33.0f, 30.0f, 6.0f, 34.5f},
+    {32.0f, 0.0f, 25.5f, 42.0f, 6.0f, 27.0f},
+    {44.0f, 0.0f, 33.0f, 54.0f, 6.0f, 34.5f},
+    // Mantle stairs, south. Each step is vault height above the last.
+    {-30.0f, 0.0f, -40.0f, -26.0f, 1.0f, -36.0f},
+    {-25.0f, 0.0f, -40.0f, -21.0f, 2.0f, -36.0f},
+    {-20.0f, 0.0f, -40.0f, -16.0f, 3.0f, -36.0f},
+    {-15.0f, 0.0f, -40.0f, -11.0f, 4.0f, -36.0f},
+    // Tower, north-west. Tall faces for long wallruns that end in a mantle.
+    {-40.0f, 0.0f, 30.0f, -30.0f, 10.0f, 40.0f},
+    // Practice wall, west. One long clean face for learning the wallrun.
+    {-55.0f, 0.0f, -10.0f, -53.0f, 7.0f, 20.0f},
 };
 
 }  // namespace
@@ -314,8 +336,18 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     for (u64 i = 0; i < boxes.size(); ++i) {
         const Aabb& b = boxes[i];
         if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, hull_h, b)) {
+            const f32 ledge = b.max_y - next.cam_y;
             next.cam_x = next.vel_x > 0.0f ? b.min_x - HULL_HALF_WIDTH : b.max_x + HULL_HALF_WIDTH;
-            next.vel_x = 0.0f;
+            if (ledge > 0.0f && ledge <= MANTLE_REACH) {
+                // Mantle: launch over the lip and keep horizontal speed, so the
+                // ledge is vaulted instead of ending the run.
+                const f32 needed = sim_sqrt(2.0f * GRAVITY * ledge) + MANTLE_MARGIN;
+                if (next.vel_y < needed) {
+                    next.vel_y = needed;
+                }
+            } else {
+                next.vel_x = 0.0f;
+            }
         }
     }
 
@@ -323,10 +355,22 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     for (u64 i = 0; i < boxes.size(); ++i) {
         const Aabb& b = boxes[i];
         if (hull_overlaps(next.cam_x, next.cam_y, next.cam_z, hull_h, b)) {
+            const f32 ledge = b.max_y - next.cam_y;
             next.cam_z = next.vel_z > 0.0f ? b.min_z - HULL_HALF_WIDTH : b.max_z + HULL_HALF_WIDTH;
-            next.vel_z = 0.0f;
+            if (ledge > 0.0f && ledge <= MANTLE_REACH) {
+                const f32 needed = sim_sqrt(2.0f * GRAVITY * ledge) + MANTLE_MARGIN;
+                if (next.vel_y < needed) {
+                    next.vel_y = needed;
+                }
+            } else {
+                next.vel_z = 0.0f;
+            }
         }
     }
+
+    // The landing dip eases back every tick and refills on impact, sized by the
+    // fall speed, so hard landings read harder. Render-side juice only.
+    next.land_impact = prev.land_impact * LAND_IMPACT_DECAY;
 
     bool grounded_now = false;
     next.cam_y += next.vel_y * SIM_DT;
@@ -336,6 +380,9 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
             if (next.vel_y <= 0.0f) {
                 next.cam_y = b.max_y;  // land on top
                 grounded_now = true;
+                if (prev.on_ground == 0 && -next.vel_y > next.land_impact) {
+                    next.land_impact = -next.vel_y;
+                }
             } else {
                 next.cam_y = b.min_y - hull_h;  // bumped head
             }
@@ -346,6 +393,9 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     if (next.cam_y <= 0.0f) {
         next.cam_y = 0.0f;
         if (next.vel_y < 0.0f) {
+            if (prev.on_ground == 0 && -next.vel_y > next.land_impact) {
+                next.land_impact = -next.vel_y;
+            }
             next.vel_y = 0.0f;
         }
         grounded_now = true;
@@ -365,6 +415,17 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         next.state = MoveState::Wallrun;
     } else {
         next.state = MoveState::Air;
+    }
+
+    // Expose a nearby wall while airborne so the camera can lean toward it
+    // before the run starts, which reads as anticipation.
+    if (next.state == MoveState::Air) {
+        f32 nx = 0.0f;
+        f32 nz = 0.0f;
+        if (find_wall(next.cam_x, next.cam_y, next.cam_z, hull_h, boxes, &nx, &nz)) {
+            next.wall_nx = nx;
+            next.wall_nz = nz;
+        }
     }
 }
 
@@ -396,6 +457,7 @@ u64 hash(const World& w) {
     h = fnv1a(h, &w.vel_z, sizeof(w.vel_z));
     h = fnv1a(h, &w.wall_nx, sizeof(w.wall_nx));
     h = fnv1a(h, &w.wall_nz, sizeof(w.wall_nz));
+    h = fnv1a(h, &w.land_impact, sizeof(w.land_impact));
     h = fnv1a(h, &w.wallrun_ticks, sizeof(w.wallrun_ticks));
     h = fnv1a(h, &w.state, sizeof(w.state));
     h = fnv1a(h, &w.on_ground, sizeof(w.on_ground));

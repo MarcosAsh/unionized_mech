@@ -81,8 +81,9 @@ struct World {
     f32 vel_x = 0.0f;      ///< Velocity, world units per second.
     f32 vel_y = 0.0f;
     f32 vel_z = 0.0f;
-    f32 wall_nx = 0.0f;    ///< Wall normal while wallrunning, for camera tilt.
+    f32 wall_nx = 0.0f;    ///< Nearby wall normal (wallrun or airborne approach).
     f32 wall_nz = 0.0f;
+    f32 land_impact = 0.0f;  ///< Fall speed at the last landing, decaying.
     u16 wallrun_ticks = 0;      ///< Ticks spent on the current wall.
     MoveState state = MoveState::Air;
     u8 on_ground = 0;      ///< 1 while standing on the floor.

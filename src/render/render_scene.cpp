@@ -76,7 +76,7 @@ void add_box(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 x0, f32 
 }
 
 void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
-    constexpr i32 N = 24;
+    constexpr i32 N = 60;
     constexpr f32 CELL = 2.0f;
     const f32 half = static_cast<f32>(N) * CELL * 0.5f;
     for (i32 i = 0; i < N; ++i) {
@@ -103,8 +103,8 @@ void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
 }  // namespace
 
 Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
-    core::Array<Vertex> verts = scratch.make_array<Vertex>(8192);
-    core::Array<u32> indices = scratch.make_array<u32>(16384);
+    core::Array<Vertex> verts = scratch.make_array<Vertex>(16384);
+    core::Array<u32> indices = scratch.make_array<u32>(32768);
     build_scene(verts, indices);
 
     Scene scene;
@@ -156,16 +156,24 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const f32 yaw = angle_lerp(prev.cam_yaw, curr.cam_yaw, alpha);
     const f32 pitch = lerp(prev.cam_pitch, curr.cam_pitch, alpha);
 
-    const f32 eye_height = curr.ducked != 0 ? 0.9f : 1.7f;
+    // The eye dips on landing by the stored impact, easing back as it decays.
+    f32 eye_height = curr.ducked != 0 ? 0.9f : 1.7f;
+    f32 impact = curr.land_impact;
+    if (impact > 12.0f) {
+        impact = 12.0f;
+    }
+    eye_height -= impact * 0.02f;
 
-    // Camera roll eases toward the wallrun tilt so engaging and leaving a wall
-    // read as a lean rather than a snap. Cosmetic and render-side only.
+    // Camera roll eases toward the wall so engaging and leaving read as a lean
+    // rather than a snap. A nearby wall while airborne gets a partial lean as
+    // anticipation before the run starts. Cosmetic and render-side only.
     f32 target_roll = 0.0f;
-    if (curr.state == sim::MoveState::Wallrun) {
+    const bool near_wall = curr.wall_nx != 0.0f || curr.wall_nz != 0.0f;
+    if (near_wall) {
         const f32 facing_x = std::sin(yaw);
         const f32 facing_z = -std::cos(yaw);
         const f32 side = facing_x * curr.wall_nz - facing_z * curr.wall_nx;
-        target_roll = side * 0.15f;
+        target_roll = side * (curr.state == sim::MoveState::Wallrun ? 0.15f : 0.07f);
     }
     cur_roll_ += (target_roll - cur_roll_) * 0.2f;
 
