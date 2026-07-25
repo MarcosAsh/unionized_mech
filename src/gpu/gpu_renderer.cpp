@@ -90,6 +90,18 @@ RendererResult Renderer::create(const Device& device, VkSurfaceKHR surface, u32 
                    "command buffers");
     }
 
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(device.physical(), &props);
+    r.timestamp_period_ = props.limits.timestampPeriod;
+
+    VkQueryPoolCreateInfo query_ci{};
+    query_ci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    query_ci.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    query_ci.queryCount = FRAMES_IN_FLIGHT * 2;
+    ASSERT_MSG(vkCreateQueryPool(device.handle(), &query_ci, nullptr, &r.timestamp_pool_) ==
+                   VK_SUCCESS,
+               "vkCreateQueryPool");
+
     r.recreate_swapchain(width, height);
     return RendererResult::ok(static_cast<Renderer&&>(r));
 }
@@ -98,13 +110,11 @@ bool Renderer::recreate_swapchain(u32 width, u32 height) {
     const VkDevice dev = device_->handle();
 
     if (swapchain_ != VK_NULL_HANDLE) {
-        const u64 target = frame_counter_;
-        VkSemaphoreWaitInfo wait{};
-        wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        wait.semaphoreCount = 1;
-        wait.pSemaphores = &timeline_;
-        wait.pValues = &target;
-        vkWaitSemaphores(dev, &wait, UINT64_MAX);
+        // Resize is a rare event, not the steady frame path. Wait for the graphics
+        // queue (rendering and presents both) to drain so the semaphores and views
+        // being retired are no longer in use. This is a queue wait, not a
+        // device-wide wait, and never runs per frame.
+        vkQueueWaitIdle(device_->graphics_queue());
         destroy_image_objects();
     }
 
@@ -220,6 +230,18 @@ Frame Renderer::begin_frame(u32 width, u32 height) {
     }
 
     const u32 slot = static_cast<u32>(frame_counter_ % FRAMES_IN_FLIGHT);
+
+    // Read this slot's timestamps from its previous use, now that the pacing wait
+    // guarantees that frame finished. Two timestamps bracket the frame's GPU work.
+    if (frame_counter_ >= FRAMES_IN_FLIGHT) {
+        u64 ts[2] = {0, 0};
+        if (vkGetQueryPoolResults(dev, timestamp_pool_, slot * 2, 2, sizeof(ts), ts, sizeof(u64),
+                                  VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+            const f64 ns = static_cast<f64>(ts[1] - ts[0]) * static_cast<f64>(timestamp_period_);
+            last_gpu_ms_ = static_cast<f32>(ns * 1e-6);
+        }
+    }
+
     u32 image_index = 0;
     const VkResult acquired = vkAcquireNextImageKHR(dev, swapchain_, UINT64_MAX,
                                                     image_available_[slot], VK_NULL_HANDLE,
@@ -236,6 +258,9 @@ Frame Renderer::begin_frame(u32 width, u32 height) {
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     ASSERT_MSG(vkBeginCommandBuffer(cmd, &begin) == VK_SUCCESS, "vkBeginCommandBuffer");
+
+    vkCmdResetQueryPool(cmd, timestamp_pool_, slot * 2, 2);
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, timestamp_pool_, slot * 2);
 
     submit_barrier(cmd, image_barrier(images_[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
                                       VK_IMAGE_LAYOUT_UNDEFINED,
@@ -274,6 +299,9 @@ void Renderer::end_frame() {
                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                                       VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                                       VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0));
+
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, timestamp_pool_,
+                         cur_slot_ * 2 + 1);
     ASSERT_MSG(vkEndCommandBuffer(cmd) == VK_SUCCESS, "vkEndCommandBuffer");
 
     VkCommandBufferSubmitInfo cmd_info{};
@@ -378,6 +406,9 @@ Renderer::~Renderer() {
     if (timeline_ != VK_NULL_HANDLE) {
         vkDestroySemaphore(dev, timeline_, nullptr);
     }
+    if (timestamp_pool_ != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(dev, timestamp_pool_, nullptr);
+    }
     allocator_.shutdown();
 }
 
@@ -405,6 +436,9 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
     bindless_layout_ = other.bindless_layout_;
     bindless_set_ = other.bindless_set_;
     next_storage_index_ = other.next_storage_index_;
+    timestamp_pool_ = other.timestamp_pool_;
+    timestamp_period_ = other.timestamp_period_;
+    last_gpu_ms_ = other.last_gpu_ms_;
     owned_count_ = other.owned_count_;
     cur_image_ = other.cur_image_;
     cur_slot_ = other.cur_slot_;

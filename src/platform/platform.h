@@ -42,6 +42,9 @@ public:
     /// True while the window has no drawable area and should not be rendered.
     [[nodiscard]] bool occluded() const { return width_ == 0 || height_ == 0; }
 
+    /// Request a new window size. The drawable size updates on the next pump.
+    void set_size(u32 width, u32 height);
+
     /// Build one tick of intent for `tick` from the live keyboard and mouse plus
     /// the motion accumulated since the last pump. Clears the motion accumulator.
     [[nodiscard]] sim::InputCmd capture_input(sim::TickId tick);

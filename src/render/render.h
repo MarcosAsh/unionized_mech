@@ -26,6 +26,10 @@ public:
     /// interpolated between the `prev` and `curr` snapshots by `alpha` in [0, 1].
     void draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr, f32 alpha);
 
+    /// Rebuild the pipeline if either compiled shader changed on disk. Cheap to
+    /// call every frame; it only rebuilds when a SPIR-V file's timestamp moves.
+    void maybe_reload();
+
 private:
     Scene() = default;
 
@@ -37,10 +41,15 @@ private:
     VkPipeline pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
+    VkFormat color_format_ = VK_FORMAT_UNDEFINED;
+    VkFormat depth_format_ = VK_FORMAT_UNDEFINED;
     gpu::Buffer vertices_{};
     gpu::Buffer indices_{};
     gpu::Buffer indirect_{};
     u32 index_count_ = 0;
+    i64 vert_mtime_ = 0;
+    i64 frag_mtime_ = 0;
 };
 
 }  // namespace render

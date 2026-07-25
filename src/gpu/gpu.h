@@ -203,6 +203,10 @@ public:
     /// Convenience: begin a frame, clear it to (r, g, b), and present.
     void render_clear(f32 r, f32 g, f32 b, u32 width, u32 height);
 
+    /// GPU time in milliseconds for the most recently completed frame, from
+    /// timestamp queries. Zero until enough frames have retired.
+    [[nodiscard]] f32 last_gpu_ms() const { return last_gpu_ms_; }
+
 private:
     Renderer() = default;
 
@@ -244,6 +248,10 @@ private:
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     u32 next_storage_index_ = 0;
+
+    VkQueryPool timestamp_pool_ = VK_NULL_HANDLE;
+    f32 timestamp_period_ = 1.0f;
+    f32 last_gpu_ms_ = 0.0f;
 
     VkBuffer owned_buffers_[MAX_OWNED_BUFFERS] = {};
     u32 owned_count_ = 0;

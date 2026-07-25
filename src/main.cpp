@@ -132,19 +132,33 @@ int main(int argc, char** argv) {
         // Acceptance check 4: nothing allocates from the permanent arena in the loop.
         ASSERT(permanent.used() == permanent_baseline);
 
+        // In a capped run, resize twice to exercise the swapchain recreate path
+        // under validation (acceptance check 2).
+        if (frame_cap != 0) {
+            if (frames == frame_cap / 3) {
+                core::log_info("resize to 800x600");
+                win.set_size(800, 600);
+            } else if (frames == 2 * frame_cap / 3) {
+                core::log_info("resize to 1600x900");
+                win.set_size(1600, 900);
+            }
+        }
+
         if (now_ns - report_ns >= 1000000000ull) {
             const f64 dt = static_cast<f64>(now_ns - report_ns) * 1e-9;
+            const f64 cpu_ms = dt * 1000.0 / static_cast<f64>(frames - frames_at_report);
             core::log_infof(
-                "t=%.0fs  ticks/s=%.0f  fps=%.0f  yaw=%.2f pitch=%.2f pos=(%.1f,%.1f,%.1f)",
+                "t=%.0fs  fps=%.0f  cpu=%.2fms  gpu=%.2fms  ticks/s=%.0f  pos=(%.1f,%.1f,%.1f)",
                 static_cast<f64>(now_ns - start_ns) * 1e-9,
+                static_cast<f64>(frames - frames_at_report) / dt, cpu_ms,
+                static_cast<f64>(renderer.last_gpu_ms()),
                 static_cast<f64>(total_ticks - ticks_at_report) / dt,
-                static_cast<f64>(frames - frames_at_report) / dt,
-                static_cast<f64>(curr_world.cam_yaw), static_cast<f64>(curr_world.cam_pitch),
                 static_cast<f64>(curr_world.cam_x), static_cast<f64>(curr_world.cam_y),
                 static_cast<f64>(curr_world.cam_z));
             report_ns = now_ns;
             ticks_at_report = total_ticks;
             frames_at_report = frames;
+            scene.maybe_reload();
         }
 
         if (frame_cap != 0 && frames >= frame_cap) {

@@ -150,6 +150,10 @@ sim::InputCmd Window::capture_input(sim::TickId tick) {
     return cmd;
 }
 
+void Window::set_size(u32 width, u32 height) {
+    SDL_SetWindowSize(as_window(window_), static_cast<int>(width), static_cast<int>(height));
+}
+
 core::Span<const char* const> Window::vulkan_instance_extensions() const {
     Uint32 count = 0;
     const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);

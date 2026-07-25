@@ -1,9 +1,14 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "render/render.h"
 #include "render/render_math.h"
 
 #include "core/array.h"
+#include "core/log.h"
 
 #include <volk.h>
+
+#include <sys/stat.h>
 
 namespace render {
 
@@ -18,6 +23,14 @@ struct PushConstants {
     f32 view_proj[16];
     u32 vbuf;
 };
+
+i64 file_mtime(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    return static_cast<i64>(st.st_mtim.tv_sec) * 1000000000 + static_cast<i64>(st.st_mtim.tv_nsec);
+}
 
 void add_vertex(core::Array<Vertex>& verts, f32 x, f32 y, f32 z, f32 r, f32 g, f32 b) {
     Vertex v;
@@ -96,6 +109,9 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
     Scene scene;
     scene.device_ = gpu.device_handle();
     scene.bindless_set_ = gpu.bindless_set();
+    scene.bindless_layout_ = gpu.bindless_layout();
+    scene.color_format_ = gpu.color_format();
+    scene.depth_format_ = gpu.depth_format();
     scene.index_count_ = static_cast<u32>(indices.size());
 
     scene.vertices_ = gpu.create_device_buffer(verts.as_span().data(), verts.size() * sizeof(Vertex),
@@ -109,9 +125,26 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
     scene.indirect_ = gpu.create_device_buffer(&draw, sizeof(draw),
                                                VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false);
 
-    build_pipeline(scene.device_, gpu.color_format(), gpu.depth_format(), gpu.bindless_layout(),
+    build_pipeline(scene.device_, scene.color_format_, scene.depth_format_, scene.bindless_layout_,
                    &scene.pipeline_, &scene.layout_);
+    scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv");
+    scene.frag_mtime_ = file_mtime(SHADER_DIR "/scene.frag.spv");
     return scene;
+}
+
+void Scene::maybe_reload() {
+    const i64 vert = file_mtime(SHADER_DIR "/scene.vert.spv");
+    const i64 frag = file_mtime(SHADER_DIR "/scene.frag.spv");
+    if (vert == vert_mtime_ && frag == frag_mtime_) {
+        return;
+    }
+    vkDeviceWaitIdle(device_);  // reload is an event, not the steady frame path
+    vkDestroyPipeline(device_, pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, layout_, nullptr);
+    build_pipeline(device_, color_format_, depth_format_, bindless_layout_, &pipeline_, &layout_);
+    vert_mtime_ = vert;
+    frag_mtime_ = frag;
+    core::log_info("shaders reloaded");
 }
 
 void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr,
