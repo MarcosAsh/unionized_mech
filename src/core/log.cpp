@@ -8,12 +8,14 @@ namespace core {
 static void vlog(std::FILE* out, const char* fmt, va_list args) {
     std::vfprintf(out, fmt, args);
     std::fputc('\n', out);
+    std::fflush(out);
 }
 
 void log_message(LogLevel level, const char* msg) {
     std::FILE* out = (level == LogLevel::Error) ? stderr : stdout;
     std::fputs(msg, out);
     std::fputc('\n', out);
+    std::fflush(out);
 }
 
 void log_info(const char* msg) { log_message(LogLevel::Info, msg); }

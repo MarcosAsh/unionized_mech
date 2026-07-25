@@ -30,8 +30,11 @@ int main() {
     f64 accumulator = 0.0;
     const u64 start_ns = core::Timer::now_ns();
     u64 prev_ns = start_ns;
+    u64 report_ns = start_ns;
     u64 total_ticks = 0;
+    u64 ticks_at_report = 0;
     u64 frames = 0;
+    u64 frames_at_report = 0;
 
     while (!win.quit_requested()) {
         win.pump();
@@ -53,6 +56,22 @@ int main() {
 
         frame.reset();
         ++frames;
+
+        // Once-a-second heartbeat so a run shows live proof of life.
+        if (now_ns - report_ns >= 1000000000ull) {
+            const f64 dt = static_cast<f64>(now_ns - report_ns) * 1e-9;
+            core::log_infof(
+                "t=%.0fs  ticks/s=%.0f  fps=%.0f  yaw=%.2f pitch=%.2f pos=(%.1f,%.1f,%.1f)",
+                static_cast<f64>(now_ns - start_ns) * 1e-9,
+                static_cast<f64>(total_ticks - ticks_at_report) / dt,
+                static_cast<f64>(frames - frames_at_report) / dt,
+                static_cast<f64>(world.cam_yaw), static_cast<f64>(world.cam_pitch),
+                static_cast<f64>(world.cam_x), static_cast<f64>(world.cam_y),
+                static_cast<f64>(world.cam_z));
+            report_ns = now_ns;
+            ticks_at_report = total_ticks;
+            frames_at_report = frames;
+        }
     }
 
     const f64 seconds = static_cast<f64>(core::Timer::now_ns() - start_ns) * 1e-9;
