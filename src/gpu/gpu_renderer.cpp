@@ -19,10 +19,10 @@ VkSemaphore make_binary_semaphore(VkDevice device) {
     return s;
 }
 
-VkImageMemoryBarrier2 color_barrier(VkImage image, VkImageLayout old_layout,
-                                    VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,
-                                    VkAccessFlags2 src_access, VkPipelineStageFlags2 dst_stage,
-                                    VkAccessFlags2 dst_access) {
+VkImageMemoryBarrier2 image_barrier(VkImage image, VkImageAspectFlags aspect,
+                                    VkImageLayout old_layout, VkImageLayout new_layout,
+                                    VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+                                    VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access) {
     VkImageMemoryBarrier2 b{};
     b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     b.srcStageMask = src_stage;
@@ -34,7 +34,7 @@ VkImageMemoryBarrier2 color_barrier(VkImage image, VkImageLayout old_layout,
     b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     b.image = image;
-    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.subresourceRange = {aspect, 0, 1, 0, 1};
     return b;
 }
 
@@ -59,16 +59,17 @@ RendererResult Renderer::create(const Device& device, VkSurfaceKHR surface, u32 
     Renderer r;
     r.device_ = &device;
     r.surface_ = surface;
+    r.allocator_.init(device.physical(), device.handle());
+    r.init_bindless();
 
     VkSemaphoreTypeCreateInfo timeline_type{};
     timeline_type.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
     timeline_type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-    timeline_type.initialValue = 0;
     VkSemaphoreCreateInfo timeline_ci{};
     timeline_ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     timeline_ci.pNext = &timeline_type;
     ASSERT_MSG(vkCreateSemaphore(device.handle(), &timeline_ci, nullptr, &r.timeline_) == VK_SUCCESS,
-               "vkCreateSemaphore timeline");
+               "timeline semaphore");
 
     for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
         r.image_available_[i] = make_binary_semaphore(device.handle());
@@ -78,7 +79,7 @@ RendererResult Renderer::create(const Device& device, VkSurfaceKHR surface, u32 
         pool_ci.queueFamilyIndex = device.graphics_family();
         ASSERT_MSG(vkCreateCommandPool(device.handle(), &pool_ci, nullptr, &r.pools_[i]) ==
                        VK_SUCCESS,
-                   "vkCreateCommandPool");
+                   "command pool");
 
         VkCommandBufferAllocateInfo alloc{};
         alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -86,12 +87,10 @@ RendererResult Renderer::create(const Device& device, VkSurfaceKHR surface, u32 
         alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         alloc.commandBufferCount = 1;
         ASSERT_MSG(vkAllocateCommandBuffers(device.handle(), &alloc, &r.cmds_[i]) == VK_SUCCESS,
-                   "vkAllocateCommandBuffers");
+                   "command buffers");
     }
 
-    if (!r.recreate_swapchain(width, height)) {
-        // Zero-sized at startup is unusual but not fatal; the first resize fixes it.
-    }
+    r.recreate_swapchain(width, height);
     return RendererResult::ok(static_cast<Renderer&&>(r));
 }
 
@@ -99,7 +98,6 @@ bool Renderer::recreate_swapchain(u32 width, u32 height) {
     const VkDevice dev = device_->handle();
 
     if (swapchain_ != VK_NULL_HANDLE) {
-        // Wait for all rendering we submitted to finish before retiring images.
         const u64 target = frame_counter_;
         VkSemaphoreWaitInfo wait{};
         wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
@@ -144,11 +142,7 @@ bool Renderer::recreate_swapchain(u32 width, u32 height) {
     ci.presentMode = present_mode;
     ci.clipped = VK_TRUE;
     ci.oldSwapchain = old;
-
-    VkSwapchainKHR created = VK_NULL_HANDLE;
-    ASSERT_MSG(vkCreateSwapchainKHR(dev, &ci, nullptr, &created) == VK_SUCCESS,
-               "vkCreateSwapchainKHR");
-    swapchain_ = created;
+    ASSERT_MSG(vkCreateSwapchainKHR(dev, &ci, nullptr, &swapchain_) == VK_SUCCESS, "swapchain");
     if (old != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(dev, old, nullptr);
     }
@@ -171,15 +165,24 @@ bool Renderer::recreate_swapchain(u32 width, u32 height) {
         vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
         vci.format = format_;
         vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        ASSERT_MSG(vkCreateImageView(dev, &vci, nullptr, &views_[i]) == VK_SUCCESS,
-                   "vkCreateImageView");
+        ASSERT_MSG(vkCreateImageView(dev, &vci, nullptr, &views_[i]) == VK_SUCCESS, "swap view");
         render_finished_[i] = make_binary_semaphore(dev);
     }
+
+    create_depth();
     return true;
 }
 
 void Renderer::destroy_image_objects() {
     const VkDevice dev = device_->handle();
+    if (depth_view_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(dev, depth_view_, nullptr);
+        depth_view_ = VK_NULL_HANDLE;
+    }
+    if (depth_image_ != VK_NULL_HANDLE) {
+        vkDestroyImage(dev, depth_image_, nullptr);
+        depth_image_ = VK_NULL_HANDLE;
+    }
     for (u32 i = 0; i < image_count_; ++i) {
         if (views_[i] != VK_NULL_HANDLE) {
             vkDestroyImageView(dev, views_[i], nullptr);
@@ -193,13 +196,14 @@ void Renderer::destroy_image_objects() {
     image_count_ = 0;
 }
 
-void Renderer::render_clear(f32 r, f32 g, f32 b, u32 width, u32 height) {
+Frame Renderer::begin_frame(u32 width, u32 height) {
+    Frame frame{};
     if (width == 0 || height == 0) {
-        return;
+        return frame;
     }
     if (swapchain_ == VK_NULL_HANDLE || width != extent_.width || height != extent_.height) {
         if (!recreate_swapchain(width, height)) {
-            return;
+            return frame;
         }
     }
 
@@ -216,54 +220,60 @@ void Renderer::render_clear(f32 r, f32 g, f32 b, u32 width, u32 height) {
     }
 
     const u32 slot = static_cast<u32>(frame_counter_ % FRAMES_IN_FLIGHT);
-
     u32 image_index = 0;
     const VkResult acquired = vkAcquireNextImageKHR(dev, swapchain_, UINT64_MAX,
                                                     image_available_[slot], VK_NULL_HANDLE,
                                                     &image_index);
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain(width, height);
-        return;
+        return frame;
     }
     ASSERT_MSG(acquired == VK_SUCCESS || acquired == VK_SUBOPTIMAL_KHR, "vkAcquireNextImageKHR");
 
-    ASSERT_MSG(vkResetCommandPool(dev, pools_[slot], 0) == VK_SUCCESS, "vkResetCommandPool");
     const VkCommandBuffer cmd = cmds_[slot];
+    ASSERT_MSG(vkResetCommandPool(dev, pools_[slot], 0) == VK_SUCCESS, "vkResetCommandPool");
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     ASSERT_MSG(vkBeginCommandBuffer(cmd, &begin) == VK_SUCCESS, "vkBeginCommandBuffer");
 
-    submit_barrier(cmd, color_barrier(images_[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
+    submit_barrier(cmd, image_barrier(images_[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+                                      VK_IMAGE_LAYOUT_UNDEFINED,
                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                       VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                                       VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT));
+    submit_barrier(cmd, image_barrier(depth_image_, VK_IMAGE_ASPECT_DEPTH_BIT,
+                                      VK_IMAGE_LAYOUT_UNDEFINED,
+                                      VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, 0,
+                                      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                          VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                                      VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT));
 
-    VkRenderingAttachmentInfo color{};
-    color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    color.imageView = views_[image_index];
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{r, g, b, 1.0f}};
+    cur_image_ = image_index;
+    cur_slot_ = slot;
+    cur_submit_ = submit_value;
+    cur_w_ = width;
+    cur_h_ = height;
 
-    VkRenderingInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rendering.renderArea.extent = extent_;
-    rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &color;
-    vkCmdBeginRendering(cmd, &rendering);
-    vkCmdEndRendering(cmd);
+    frame.cmd = cmd;
+    frame.color_view = views_[image_index];
+    frame.depth_view = depth_view_;
+    frame.extent = extent_;
+    frame.valid = true;
+    return frame;
+}
 
-    submit_barrier(cmd, color_barrier(images_[image_index],
+void Renderer::end_frame() {
+    const VkCommandBuffer cmd = cmds_[cur_slot_];
+
+    submit_barrier(cmd, image_barrier(images_[cur_image_], VK_IMAGE_ASPECT_COLOR_BIT,
                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                                       VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                                       VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0));
-
     ASSERT_MSG(vkEndCommandBuffer(cmd) == VK_SUCCESS, "vkEndCommandBuffer");
 
     VkCommandBufferSubmitInfo cmd_info{};
@@ -272,16 +282,16 @@ void Renderer::render_clear(f32 r, f32 g, f32 b, u32 width, u32 height) {
 
     VkSemaphoreSubmitInfo wait_info{};
     wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    wait_info.semaphore = image_available_[slot];
+    wait_info.semaphore = image_available_[cur_slot_];
     wait_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSemaphoreSubmitInfo signal_info[2]{};
     signal_info[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    signal_info[0].semaphore = render_finished_[image_index];
+    signal_info[0].semaphore = render_finished_[cur_image_];
     signal_info[0].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     signal_info[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     signal_info[1].semaphore = timeline_;
-    signal_info[1].value = submit_value;
+    signal_info[1].value = cur_submit_;
     signal_info[1].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     VkSubmitInfo2 submit{};
@@ -298,19 +308,43 @@ void Renderer::render_clear(f32 r, f32 g, f32 b, u32 width, u32 height) {
     VkPresentInfoKHR present{};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present.waitSemaphoreCount = 1;
-    present.pWaitSemaphores = &render_finished_[image_index];
+    present.pWaitSemaphores = &render_finished_[cur_image_];
     present.swapchainCount = 1;
     present.pSwapchains = &swapchain_;
-    present.pImageIndices = &image_index;
+    present.pImageIndices = &cur_image_;
     const VkResult presented = vkQueuePresentKHR(device_->graphics_queue(), &present);
 
-    frame_counter_ = submit_value;
+    frame_counter_ = cur_submit_;
 
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) {
-        recreate_swapchain(width, height);
+        recreate_swapchain(cur_w_, cur_h_);
         return;
     }
     ASSERT_MSG(presented == VK_SUCCESS, "vkQueuePresentKHR");
+}
+
+void Renderer::render_clear(f32 r, f32 g, f32 b, u32 width, u32 height) {
+    const Frame frame = begin_frame(width, height);
+    if (!frame.valid) {
+        return;
+    }
+    VkRenderingAttachmentInfo color{};
+    color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    color.imageView = frame.color_view;
+    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color.clearValue.color = {{r, g, b, 1.0f}};
+
+    VkRenderingInfo rendering{};
+    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    rendering.renderArea.extent = frame.extent;
+    rendering.layerCount = 1;
+    rendering.colorAttachmentCount = 1;
+    rendering.pColorAttachments = &color;
+    vkCmdBeginRendering(frame.cmd, &rendering);
+    vkCmdEndRendering(frame.cmd);
+    end_frame();
 }
 
 Renderer::~Renderer() {
@@ -320,6 +354,15 @@ Renderer::~Renderer() {
     const VkDevice dev = device_->handle();
     vkDeviceWaitIdle(dev);  // shutdown, not the frame loop
 
+    for (u32 i = 0; i < owned_count_; ++i) {
+        vkDestroyBuffer(dev, owned_buffers_[i], nullptr);
+    }
+    if (bindless_pool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(dev, bindless_pool_, nullptr);
+    }
+    if (bindless_layout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(dev, bindless_layout_, nullptr);
+    }
     destroy_image_objects();
     if (swapchain_ != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(dev, swapchain_, nullptr);
@@ -335,45 +378,53 @@ Renderer::~Renderer() {
     if (timeline_ != VK_NULL_HANDLE) {
         vkDestroySemaphore(dev, timeline_, nullptr);
     }
+    allocator_.shutdown();
 }
 
-Renderer::Renderer(Renderer&& other) noexcept {
-    *this = static_cast<Renderer&&>(other);
-}
+Renderer::Renderer(Renderer&& other) noexcept { *this = static_cast<Renderer&&>(other); }
 
 Renderer& Renderer::operator=(Renderer&& other) noexcept {
-    if (this != &other) {
-        device_ = other.device_;
-        surface_ = other.surface_;
-        swapchain_ = other.swapchain_;
-        format_ = other.format_;
-        extent_ = other.extent_;
-        image_count_ = other.image_count_;
-        timeline_ = other.timeline_;
-        frame_counter_ = other.frame_counter_;
-        for (u32 i = 0; i < MAX_IMAGES; ++i) {
-            images_[i] = other.images_[i];
-            views_[i] = other.views_[i];
-            render_finished_[i] = other.render_finished_[i];
-        }
-        for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-            image_available_[i] = other.image_available_[i];
-            pools_[i] = other.pools_[i];
-            cmds_[i] = other.cmds_[i];
-        }
-        other.device_ = nullptr;
-        other.swapchain_ = VK_NULL_HANDLE;
-        other.timeline_ = VK_NULL_HANDLE;
-        other.image_count_ = 0;
-        for (u32 i = 0; i < MAX_IMAGES; ++i) {
-            other.views_[i] = VK_NULL_HANDLE;
-            other.render_finished_[i] = VK_NULL_HANDLE;
-        }
-        for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-            other.image_available_[i] = VK_NULL_HANDLE;
-            other.pools_[i] = VK_NULL_HANDLE;
-        }
+    if (this == &other) {
+        return *this;
     }
+    // Move construction only ever targets a fresh Renderer, so there is nothing
+    // live to tear down here. Copy every member, then neutralise the source so
+    // its destructor (guarded on device_) does nothing.
+    device_ = other.device_;
+    surface_ = other.surface_;
+    allocator_ = other.allocator_;
+    swapchain_ = other.swapchain_;
+    format_ = other.format_;
+    extent_ = other.extent_;
+    image_count_ = other.image_count_;
+    depth_image_ = other.depth_image_;
+    depth_view_ = other.depth_view_;
+    timeline_ = other.timeline_;
+    frame_counter_ = other.frame_counter_;
+    bindless_pool_ = other.bindless_pool_;
+    bindless_layout_ = other.bindless_layout_;
+    bindless_set_ = other.bindless_set_;
+    next_storage_index_ = other.next_storage_index_;
+    owned_count_ = other.owned_count_;
+    cur_image_ = other.cur_image_;
+    cur_slot_ = other.cur_slot_;
+    cur_submit_ = other.cur_submit_;
+    cur_w_ = other.cur_w_;
+    cur_h_ = other.cur_h_;
+    for (u32 i = 0; i < MAX_IMAGES; ++i) {
+        images_[i] = other.images_[i];
+        views_[i] = other.views_[i];
+        render_finished_[i] = other.render_finished_[i];
+    }
+    for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+        image_available_[i] = other.image_available_[i];
+        pools_[i] = other.pools_[i];
+        cmds_[i] = other.cmds_[i];
+    }
+    for (u32 i = 0; i < MAX_OWNED_BUFFERS; ++i) {
+        owned_buffers_[i] = other.owned_buffers_[i];
+    }
+    other.device_ = nullptr;
     return *this;
 }
 
