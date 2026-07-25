@@ -158,19 +158,34 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
 
     const f32 eye_height = curr.ducked != 0 ? 0.9f : 1.7f;
 
-    // Tilt the camera while wallrunning, leaning by which side the wall is on.
-    f32 roll = 0.0f;
+    // Camera roll eases toward the wallrun tilt so engaging and leaving a wall
+    // read as a lean rather than a snap. Cosmetic and render-side only.
+    f32 target_roll = 0.0f;
     if (curr.state == sim::MoveState::Wallrun) {
         const f32 facing_x = std::sin(yaw);
         const f32 facing_z = -std::cos(yaw);
         const f32 side = facing_x * curr.wall_nz - facing_z * curr.wall_nx;
-        roll = side * 0.15f;
+        target_roll = side * 0.15f;
     }
+    cur_roll_ += (target_roll - cur_roll_) * 0.2f;
+
+    // Speed-linked field of view, the strongest "I am fast" signal. Widens as
+    // horizontal speed climbs past run speed, eased to avoid pumping.
+    const f32 hspeed = std::sqrt(curr.vel_x * curr.vel_x + curr.vel_z * curr.vel_z);
+    f32 speed_frac = (hspeed - 8.0f) / 8.0f;
+    if (speed_frac < 0.0f) {
+        speed_frac = 0.0f;
+    }
+    if (speed_frac > 1.0f) {
+        speed_frac = 1.0f;
+    }
+    const f32 target_fov = 1.2217f + 0.24f * speed_frac;
+    cur_fov_ += (target_fov - cur_fov_) * 0.08f;
 
     const f32 aspect =
         static_cast<f32>(frame.extent.width) / static_cast<f32>(frame.extent.height);
-    const Mat4 proj = perspective(1.2217f, aspect, 0.1f, 500.0f);
-    const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch, roll);
+    const Mat4 proj = perspective(cur_fov_, aspect, 0.1f, 500.0f);
+    const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch, cur_roll_);
     const Mat4 view_proj = mat4_mul(proj, view);
 
     VkRenderingAttachmentInfo color{};

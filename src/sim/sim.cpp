@@ -35,6 +35,10 @@ constexpr f32 SLIDE_STEER_ACCEL = 4.0f;   // weak steering accel while sliding
 // Double jump.
 constexpr u8 MAX_AIR_JUMPS = 1;  // one extra jump in the air
 
+// Forgiveness. These raise the floor without touching the ceiling.
+constexpr u8 COYOTE_TICKS = 6;       // jump still works ~100ms after a ledge
+constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landing
+
 // Wallrun. Speed builds the longer you run, which is the Titanfall signature.
 constexpr f32 WALL_DETECT_DIST = 0.6f;    // reach to grab a wall from a short gap
 constexpr f32 WALL_PULL = 2.0f;           // gentle pull toward the wall to stay stuck
@@ -154,9 +158,20 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     const bool jump_down = button_down(cmd.buttons, Button::Jump);
     const bool jump_pressed = jump_down && prev.jump_was_down == 0;
 
+    // Forgiveness bookkeeping. A fresh press arms the jump buffer, and coyote
+    // ticks count time since the ground was last underfoot.
+    u8 jump_buffer = jump_pressed ? JUMP_BUFFER_TICKS
+                                  : (prev.jump_buffer > 0 ? static_cast<u8>(prev.jump_buffer - 1)
+                                                          : static_cast<u8>(0));
+    const u8 coyote =
+        grounded ? static_cast<u8>(0)
+                 : (prev.coyote_ticks < 250 ? static_cast<u8>(prev.coyote_ticks + 1)
+                                            : static_cast<u8>(250));
+
     // A ground jump this tick skips friction, so a hop timed on landing keeps its
-    // speed. That plus air acceleration is what makes bunnyhopping work.
-    const bool ground_jump = grounded && jump_down;
+    // speed. That plus air acceleration is what makes bunnyhopping work. A
+    // buffered press from just before landing counts.
+    const bool ground_jump = grounded && (jump_down || jump_buffer > 0);
     const bool sliding = grounded && ducked &&
                          sim_sqrt(next.vel_x * next.vel_x + next.vel_z * next.vel_z) > SLIDE_MIN_SPEED;
 
@@ -251,13 +266,16 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         next.vel_y = -WALLRUN_MAX_FALL;
     }
 
-    // Jumping. Ground jump auto-hops while held (friction was skipped above);
-    // wall jump and double jump fire on a fresh press. Touching the ground or a
-    // wall refills the air jump.
+    // Jumping. Ground jump auto-hops while held or fires from the buffer
+    // (friction was skipped above). A fresh press just after walking off a ledge
+    // gets the coyote jump. Wall jump and double jump fire on a fresh press.
+    // Touching the ground or a wall refills the air jump.
+    const bool coyote_ok = !grounded && !wallrunning && coyote <= COYOTE_TICKS && prev.vel_y <= 0.0f;
     if (grounded) {
         next.air_jumps = MAX_AIR_JUMPS;
-        if (jump_down) {
+        if (jump_down || jump_buffer > 0) {
             next.vel_y = JUMP_VELOCITY;
+            jump_buffer = 0;
         }
     } else if (wallrunning) {
         next.air_jumps = MAX_AIR_JUMPS;
@@ -265,7 +283,13 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
             next.vel_y = WALLJUMP_UP;
             next.vel_x += wall_nx * WALLJUMP_PUSH;
             next.vel_z += wall_nz * WALLJUMP_PUSH;
+            jump_buffer = 0;
         }
+    } else if (jump_pressed && coyote_ok) {
+        // Coyote jump. The ledge was left a moment ago, treat it as a ground
+        // jump and keep the double jump in reserve.
+        next.vel_y = JUMP_VELOCITY;
+        jump_buffer = 0;
     } else if (jump_pressed && next.air_jumps > 0) {
         // Double jump. Redirect momentum toward the current input so you can
         // change direction in the air, then relaunch.
@@ -276,8 +300,11 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         }
         next.vel_y = JUMP_VELOCITY;
         next.air_jumps -= 1;
+        jump_buffer = 0;
     }
     next.jump_was_down = jump_down ? 1 : 0;
+    next.jump_buffer = jump_buffer;
+    next.coyote_ticks = coyote;
 
     // Move and slide, one axis at a time, against the static boxes. Resolving
     // per axis lets the player slide along walls and stand on box tops.
@@ -375,6 +402,8 @@ u64 hash(const World& w) {
     h = fnv1a(h, &w.ducked, sizeof(w.ducked));
     h = fnv1a(h, &w.air_jumps, sizeof(w.air_jumps));
     h = fnv1a(h, &w.jump_was_down, sizeof(w.jump_was_down));
+    h = fnv1a(h, &w.coyote_ticks, sizeof(w.coyote_ticks));
+    h = fnv1a(h, &w.jump_buffer, sizeof(w.jump_buffer));
     return h;
 }
 

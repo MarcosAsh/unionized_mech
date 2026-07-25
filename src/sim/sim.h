@@ -89,6 +89,8 @@ struct World {
     u8 ducked = 0;         ///< 1 while crouching or sliding.
     u8 air_jumps = 0;      ///< Remaining mid-air jumps (double jump).
     u8 jump_was_down = 0;  ///< Jump button state last tick, for edge detection.
+    u8 coyote_ticks = 0;   ///< Ticks since last grounded, saturating.
+    u8 jump_buffer = 0;    ///< Ticks a buffered jump press stays valid.
 };
 
 static_assert(std::is_trivially_copyable_v<World>);

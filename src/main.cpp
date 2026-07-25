@@ -147,14 +147,17 @@ int main(int argc, char** argv) {
         if (now_ns - report_ns >= 1000000000ull) {
             const f64 dt = static_cast<f64>(now_ns - report_ns) * 1e-9;
             const f64 cpu_ms = dt * 1000.0 / static_cast<f64>(frames - frames_at_report);
+            const f64 hspeed =
+                static_cast<f64>(curr_world.vel_x) * static_cast<f64>(curr_world.vel_x) +
+                static_cast<f64>(curr_world.vel_z) * static_cast<f64>(curr_world.vel_z);
+            const char* state_names[4] = {"ground", "slide", "air", "wallrun"};
             core::log_infof(
-                "t=%.0fs  fps=%.0f  cpu=%.2fms  gpu=%.2fms  ticks/s=%.0f  pos=(%.1f,%.1f,%.1f)",
+                "t=%.0fs  fps=%.0f  cpu=%.2fms  gpu=%.2fms  ticks/s=%.0f  speed=%.1f  %s",
                 static_cast<f64>(now_ns - start_ns) * 1e-9,
                 static_cast<f64>(frames - frames_at_report) / dt, cpu_ms,
                 static_cast<f64>(renderer.last_gpu_ms()),
-                static_cast<f64>(total_ticks - ticks_at_report) / dt,
-                static_cast<f64>(curr_world.cam_x), static_cast<f64>(curr_world.cam_y),
-                static_cast<f64>(curr_world.cam_z));
+                static_cast<f64>(total_ticks - ticks_at_report) / dt, __builtin_sqrt(hspeed),
+                state_names[static_cast<u8>(curr_world.state) & 3]);
             report_ns = now_ns;
             ticks_at_report = total_ticks;
             frames_at_report = frames;

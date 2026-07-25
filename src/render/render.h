@@ -50,6 +50,8 @@ private:
     u32 index_count_ = 0;
     i64 vert_mtime_ = 0;
     i64 frag_mtime_ = 0;
+    f32 cur_roll_ = 0.0f;    ///< Eased camera roll, cosmetic state only.
+    f32 cur_fov_ = 1.2217f;  ///< Eased vertical field of view in radians.
 };
 
 }  // namespace render
