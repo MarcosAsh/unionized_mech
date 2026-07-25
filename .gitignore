@@ -5,3 +5,7 @@
 compile_commands.json
 *.spv
 .DS_Store
+
+# Local working docs. README is the only tracked markdown.
+/ARCHITECTURE.md
+/NEXT_STEPS.md
