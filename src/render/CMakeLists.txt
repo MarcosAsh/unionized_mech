@@ -19,7 +19,8 @@ add_library(render STATIC
     src/render_pipeline.cpp
     src/render_scene.cpp
     src/render_scene_setup.cpp
-    src/render_sun.cpp)
+    src/render_sun.cpp
+    src/render_text.cpp)
 add_dependencies(render scene_shaders)
 
 target_include_directories(render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

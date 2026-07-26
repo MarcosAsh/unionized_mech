@@ -239,6 +239,9 @@ RenderModel make_overlay_quad(gpu::Renderer& gpu, u32 fallback_texture) {
     for (u32 i = 0; i < 4; ++i) {
         verts[i].pos = core::Vec3{xs[i], ys[i], 0.0f};
         verts[i].normal = core::Vec3{0.0f, 0.0f, 1.0f};
+        // NDC y grows downward, so the top of the screen samples v = 0.
+        verts[i].u = (xs[i] + 1.0f) * 0.5f;
+        verts[i].v = (ys[i] + 1.0f) * 0.5f;
     }
     static asset::Submesh sub;
     sub.index_count = 6;

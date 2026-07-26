@@ -181,6 +181,40 @@ void model_queue_tinted(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat
                   model.vertices.bindless_index, 0, 0.0f, tint);
 }
 
+void model_queue_glyph(RenderModel& model, u32 slot, core::Vec3 pos, core::Vec3 scale,
+                       const f32 tint[4], u32 tex) {
+    if (!model.loaded || model.queued >= MAX_MODEL_DRAWS) {
+        return;
+    }
+    core::Mat4 world = core::Mat4::trs(pos, core::Quat{});
+    world = world * core::Mat4::scale(scale);
+    const asset::Submesh& sub = model.submeshes[0];
+    DrawRecord& rec = model.records_mapped[slot * MAX_MODEL_DRAWS + model.queued];
+    std::memcpy(rec.model, world.m, sizeof(rec.model));
+    rec.rot[0] = 0.0f;
+    rec.rot[1] = 0.0f;
+    rec.rot[2] = 0.0f;
+    rec.rot[3] = 1.0f;
+    for (u32 c = 0; c < 4; ++c) {
+        rec.color[c] = sub.color[c] * tint[c];
+    }
+    for (u32 c = 0; c < 3; ++c) {
+        rec.bounds_min[c] = sub.bounds_min[c];
+        rec.bounds_max[c] = sub.bounds_max[c];
+    }
+    rec.bounds_min[3] = 1.0f;
+    rec.bounds_max[3] = 1.0f;
+    rec.vbuf = model.vertices.bindless_index;
+    rec.tex = tex;
+    rec.index_count = sub.index_count;
+    rec.first_index = sub.index_offset;
+    rec.vertex_base = 0;
+    rec.pad[0] = 0;
+    rec.pad[1] = 0;
+    rec.pad[2] = 0;
+    ++model.queued;
+}
+
 void model_queue_stretched(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
                            core::Vec3 scale, const f32 tint[4]) {
     queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f, tint);

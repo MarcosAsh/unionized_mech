@@ -6,6 +6,7 @@
 #include "render/render.h"
 #include "render_props.h"
 #include "render_scene_state.h"
+#include "render_text.h"
 
 #include "core/array.h"
 #include "core/log.h"
@@ -70,6 +71,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->tracer_vm = make_tracer(gpu, scene.models_->white_texture);
     scene.models_->hitmarker = make_hitmarker(gpu, scene.models_->white_texture);
     scene.models_->overlay = make_overlay_quad(gpu, scene.models_->white_texture);
+    scene.models_->font = font_build(gpu);
 
     // On ray tracing hardware, every caster gets a BLAS and the sun shadows
     // trace against the scene instead of sampling the shadow map.

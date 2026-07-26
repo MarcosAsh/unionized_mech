@@ -171,6 +171,11 @@ void model_queue_tinted(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat
 void model_queue_stretched(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
                            core::Vec3 scale, const f32 tint[4]);
 
+/// Queue submesh zero once, unrotated, with a texture override: the glyph
+/// path, where one quad model fans out into many differently-textured records.
+void model_queue_glyph(RenderModel& model, u32 slot, core::Vec3 pos, core::Vec3 scale,
+                       const f32 tint[4], u32 tex);
+
 /// Record the cull dispatch for this frame's queued records into the given
 /// pass's command slice. The caller wraps the fill and dispatch in barriers.
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,

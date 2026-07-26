@@ -3,6 +3,7 @@
 #include "render_props.h"
 #include "render_scene_state.h"
 #include "render_sun.h"
+#include "render_text.h"
 
 #include <volk.h>
 
@@ -191,6 +192,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         const f32 tint[4] = {won ? 0.1f : 0.6f, won ? 0.5f : 0.08f, 0.12f, 0.28f};
         model_queue_tinted(models_->overlay, frame.slot, core::Vec3{}, core::Quat{}, 1.0f, tint);
     }
+    hud_queue(models_->overlay, models_->font, frame.slot, curr, aspect);
 
     // The sun volume follows the camera: a tight orthographic box gives dense
     // shadow texels where the player is looking, and the border-white sampler

@@ -4,6 +4,7 @@
 // resources, visible to both scene setup and the per-frame draw.
 
 #include "render_model.h"
+#include "render_text.h"
 
 #include <gpu/gpu.h>
 
@@ -24,6 +25,7 @@ struct SceneModels {
     gpu::Blas duck_blas;
     gpu::Buffer globals;
     SceneGlobals* globals_mapped = nullptr;
+    Font font{};
     u32 white_texture = 0;
 };
 
