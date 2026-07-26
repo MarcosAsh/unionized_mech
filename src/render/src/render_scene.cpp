@@ -35,6 +35,24 @@ void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAcce
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
+// Queue one tracer beam from `origin` along `span` into `model`.
+void queue_beam(RenderModel& model, u32 slot, const core::Vec3& origin, const core::Vec3& span,
+                const f32 tint[4]) {
+    const f32 len = span.length();
+    if (len < 0.1f) {
+        return;
+    }
+    const core::Vec3 dir = span * (1.0f / len);
+    const f32 pitch = std::asin(dir.y > 1.0f ? 1.0f : (dir.y < -1.0f ? -1.0f : dir.y));
+    const f32 yaw = std::atan2(dir.x, -dir.z);
+    const core::Quat q_yaw = core::Quat::from_axis_half(
+        core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(yaw * 0.5f), std::cos(yaw * 0.5f));
+    const core::Quat q_pitch = core::Quat::from_axis_half(
+        core::Vec3{1.0f, 0.0f, 0.0f}, std::sin(pitch * 0.5f), std::cos(pitch * 0.5f));
+    model_queue_stretched(model, slot, origin, q_yaw * q_pitch, core::Vec3{0.02f, 0.02f, len},
+                          tint);
+}
+
 }  // namespace
 
 void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr,
@@ -92,6 +110,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->viewmodel);
     model_begin(models_->trooper);
     model_begin(models_->tracer);
+    model_begin(models_->tracer_vm);
     model_begin(models_->hitmarker);
     model_begin(models_->overlay);
     for (const DuckSpot& spot : DUCKS) {
@@ -114,49 +133,32 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                            rot, 1.0f, TEAM_TINTS[other.team & 1]);
     }
 
-    // Tracers: a bright beam along each recent shot, from the muzzle for the
-    // player and from the eyes for everyone else.
+    // Tracers: a bright beam along each recent shot. Bots get world-space
+    // beams from their eyes to the frozen impact. The player's beam is drawn
+    // like the gun: camera space under the viewmodel projection, running from
+    // the muzzle to the crosshair axis at the impact's distance, so it always
+    // ends exactly where the crosshair points.
     for (u32 i = 0; i < sim::MAX_PLAYERS; ++i) {
         const sim::Character& shooter = curr.chars[i];
         if (shooter.alive == 0 || shooter.shot_age > 2) {
             continue;
         }
-        // The impact point is frozen at fire time; the player's beam origin
-        // tracks the gun muzzle like the gun itself, so the tracer visually
-        // leaves the barrel then converges on the true shot line.
         const f32 scp = std::cos(shooter.shot_pitch);
         const core::Vec3 shot_dir{std::sin(shooter.shot_yaw) * scp, std::sin(shooter.shot_pitch),
                                   -std::cos(shooter.shot_yaw) * scp};
         const core::Vec3 impact = core::Vec3{shooter.shot_x, shooter.shot_y, shooter.shot_z} +
                                   shot_dir * shooter.last_shot_t;
-        core::Vec3 origin;
-        if (i == 0) {
-            const f32 ccp = std::cos(pitch);
-            const core::Vec3 cam_dir{std::sin(yaw) * ccp, std::sin(pitch), -std::cos(yaw) * ccp};
-            const core::Vec3 cam_right{std::cos(yaw), 0.0f, std::sin(yaw)};
-            origin = core::Vec3{cam_x, cam_y + eye_height, cam_z} + cam_right * 0.17f +
-                     cam_dir * 0.5f + core::Vec3{0.0f, -0.12f, 0.0f};
-        } else {
-            origin = core::Vec3{shooter.shot_x, shooter.shot_y, shooter.shot_z};
-        }
-        const core::Vec3 span = impact - origin;
-        const f32 beam_len = span.length();
-        if (beam_len < 0.1f) {
-            continue;
-        }
-        const core::Vec3 dir = span * (1.0f / beam_len);
-        const f32 beam_pitch =
-            std::asin(dir.y > 1.0f ? 1.0f : (dir.y < -1.0f ? -1.0f : dir.y));
-        const f32 beam_yaw = std::atan2(dir.x, -dir.z);
-        const core::Quat q_yaw = core::Quat::from_axis_half(
-            core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(beam_yaw * 0.5f), std::cos(beam_yaw * 0.5f));
-        const core::Quat q_pitch = core::Quat::from_axis_half(
-            core::Vec3{1.0f, 0.0f, 0.0f}, std::sin(beam_pitch * 0.5f),
-            std::cos(beam_pitch * 0.5f));
         const f32 fade[4] = {1.0f - 0.3f * static_cast<f32>(shooter.shot_age),
                              1.0f - 0.3f * static_cast<f32>(shooter.shot_age), 1.0f, 1.0f};
-        model_queue_stretched(models_->tracer, frame.slot, origin, q_yaw * q_pitch,
-                              core::Vec3{0.02f, 0.02f, beam_len}, fade);
+        if (i == 0) {
+            const core::Vec3 eye{cam_x, cam_y + eye_height, cam_z};
+            const core::Vec3 muzzle{0.17f, -0.14f, -0.57f};
+            const core::Vec3 end{0.0f, 0.0f, -(impact - eye).length()};
+            queue_beam(models_->tracer_vm, frame.slot, muzzle, end - muzzle, fade);
+        } else {
+            const core::Vec3 origin{shooter.shot_x, shooter.shot_y, shooter.shot_z};
+            queue_beam(models_->tracer, frame.slot, origin, impact - origin, fade);
+        }
     }
 
     // The first-person viewmodel lives in camera space and is drawn with its
@@ -216,10 +218,11 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[6] = {&models_->duck,   &models_->viewmodel,
-                                         &models_->trooper, &models_->tracer,
-                                         &models_->hitmarker, &models_->overlay};
-    for (u32 i = 0; i < 6; ++i) {
+    const RenderModel* fill_models[7] = {&models_->duck,      &models_->viewmodel,
+                                         &models_->trooper,   &models_->tracer,
+                                         &models_->tracer_vm, &models_->hitmarker,
+                                         &models_->overlay};
+    for (u32 i = 0; i < 7; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -251,6 +254,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot, PASS_CAMERA);
     model_cull(models_->tracer, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_CAMERA);
+    model_cull(models_->tracer_vm, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->hitmarker, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
@@ -393,8 +398,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     vm_viewport.height = static_cast<f32>(frame.extent.height);
     vm_viewport.maxDepth = 0.05f;
     vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);
-    const Mat4 vm_proj = perspective(1.05f, aspect, 0.05f, 10.0f);
+    // The far plane reaches the tracer's endpoint, which sits at the real
+    // impact distance; depth precision near the gun is unaffected.
+    const Mat4 vm_proj = perspective(1.05f, aspect, 0.05f, 300.0f);
     model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, globals_idx,
+                      frame.slot);
+    model_draw_culled(models_->tracer_vm, frame.cmd, mesh_layout_, vm_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->hitmarker, frame.cmd, mesh_layout_, vm_proj, globals_idx,
                       frame.slot);

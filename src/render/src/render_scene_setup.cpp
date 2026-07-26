@@ -67,6 +67,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
     scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
     scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
+    scene.models_->tracer_vm = make_tracer(gpu, scene.models_->white_texture);
     scene.models_->hitmarker = make_hitmarker(gpu, scene.models_->white_texture);
     scene.models_->overlay = make_overlay_quad(gpu, scene.models_->white_texture);
 

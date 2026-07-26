@@ -16,6 +16,7 @@ struct SceneModels {
     RenderModel viewmodel;
     RenderModel trooper;
     RenderModel tracer;
+    RenderModel tracer_vm;
     RenderModel hitmarker;
     RenderModel overlay;
     gpu::Blas level_blas;

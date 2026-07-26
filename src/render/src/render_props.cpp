@@ -194,13 +194,23 @@ RenderModel make_hitmarker(gpu::Renderer& gpu, u32 fallback_texture) {
     static u32 indices[4 * 36];
     u32 vc = 0;
     u32 ic = 0;
-    // Four ticks on the diagonals, at 45 degrees, just outside the crosshair.
+    // Four ticks just outside the crosshair, each rotated onto its diagonal
+    // so together they read as an X.
     const f32 d = 0.026f;
     for (u32 i = 0; i < 4; ++i) {
         const f32 sx = (i & 1) != 0 ? 1.0f : -1.0f;
         const f32 sy = (i & 2) != 0 ? 1.0f : -1.0f;
-        add_mesh_box(verts, indices, &vc, &ic, core::Vec3{sx * d, sy * d, 0.0f},
-                     core::Vec3{0.008f, 0.0016f, 0.0016f});
+        const u32 first = vc;
+        const core::Vec3 center{sx * d, sy * d, 0.0f};
+        add_mesh_box(verts, indices, &vc, &ic, center, core::Vec3{0.008f, 0.0016f, 0.0016f});
+        const f32 rc = 0.70710678f;
+        const f32 rs = sx * sy > 0.0f ? 0.70710678f : -0.70710678f;
+        for (u32 v = first; v < vc; ++v) {
+            const core::Vec3 p = verts[v].pos - center;
+            verts[v].pos = center + core::Vec3{p.x * rc - p.y * rs, p.x * rs + p.y * rc, p.z};
+            const core::Vec3 n = verts[v].normal;
+            verts[v].normal = core::Vec3{n.x * rc - n.y * rs, n.x * rs + n.y * rc, n.z};
+        }
     }
     static asset::Submesh sub;
     sub.index_count = 4 * 36;
