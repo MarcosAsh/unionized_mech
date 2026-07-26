@@ -76,17 +76,18 @@ InputCmd bot_think(const World& prev, u32 index) {
         const f32 dy = (enemy.y + 1.0f) - (me.y + eye_height(me));  // aim at the chest
         const f32 dz = enemy.z - me.z;
         const f32 flat = sim_sqrt(dx * dx + dz * dz);
-        // Yaw convention: forward at yaw 0 is -Z, so yaw = atan2(x, -z). The
-        // deterministic approximation steers rather than solves: ease toward
-        // the target every tick, which also reads as human.
+        // Yaw convention: forward at yaw 0 is -Z, so yaw = atan2(x, -z).
+        // cross_y is sin(bearing error): positive when the target is to the
+        // right, where yaw must grow. Steering eases rather than solves, which
+        // stays deterministic and reads as human.
         f32 desired_yaw = me.yaw;
         if (flat > 0.01f) {
             const f32 fx = sim_sin(me.yaw);
             const f32 fz = -sim_cos(me.yaw);
             const f32 cross_y = fx * (dz / flat) - fz * (dx / flat);
             const f32 dot_f = fx * (dx / flat) + fz * (dz / flat);
-            desired_yaw = me.yaw + (dot_f < 0.0f ? (cross_y < 0.0f ? 0.6f : -0.6f)
-                                                 : -cross_y * 0.8f);
+            desired_yaw = me.yaw + (dot_f < 0.0f ? (cross_y < 0.0f ? -0.6f : 0.6f)
+                                                 : cross_y * 0.8f);
         }
         cmd.look_dx = steer(me.yaw, desired_yaw, 0.12f);
         const f32 desired_pitch = flat > 0.01f ? dy / flat * 0.8f : 0.0f;
@@ -132,7 +133,7 @@ InputCmd bot_think(const World& prev, u32 index) {
         const f32 cross_y = fx * (dz / flat) - fz * (dx / flat);
         const f32 dot_f = fx * (dx / flat) + fz * (dz / flat);
         const f32 desired_yaw =
-            me.yaw + (dot_f < 0.0f ? (cross_y < 0.0f ? 0.5f : -0.5f) : -cross_y * 0.6f);
+            me.yaw + (dot_f < 0.0f ? (cross_y < 0.0f ? -0.5f : 0.5f) : cross_y * 0.6f);
         cmd.look_dx = steer(me.yaw, desired_yaw, 0.10f);
         cmd.move_y = 1;
         const u32 r = mix(prev.seed, prev.tick.raw / 30, index ^ 0x55u);

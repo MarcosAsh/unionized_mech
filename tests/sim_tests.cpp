@@ -323,6 +323,34 @@ static void test_hitscan_kills() {
     ASSERT(cur.chars[0].kills == 1);
 }
 
+// A bot spots an enemy it starts facing away from, turns to it, and shoots:
+// the whole see-aim-fire chain proven mechanically. Guards the steering sign,
+// which once pointed every bot away from its target.
+static void test_bot_fights_back() {
+    World w{};
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 0.0f;
+    w.chars[0].z = 0.0f;  // the stationary target
+    w.chars[1].x = 6.0f;
+    w.chars[1].z = 8.0f;
+    w.chars[1].team = 1;
+    w.chars[1].yaw = 2.5f;  // facing well away from the target
+
+    World cur = w;
+    for (u32 i = 0; i < 240 && cur.chars[0].health == 100; ++i) {
+        InputCmd idle{};
+        idle.tick = cur.tick;
+        World next{};
+        simulate(cur, idle, next);
+        cur = next;
+    }
+    ASSERT(cur.chars[0].health < 100);
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
@@ -332,6 +360,7 @@ int main() {
     test_ledge_climb();
     test_tape_round_trip();
     test_hitscan_kills();
+    test_bot_fights_back();
     test_map_round_trip();
     test_nav_pathing();
     core::log_info("sim_tests: all passed");
