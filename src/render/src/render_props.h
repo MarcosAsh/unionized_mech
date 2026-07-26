@@ -48,6 +48,13 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 /// character art replaces it later.
 [[nodiscard]] RenderModel make_trooper(gpu::Renderer& gpu, u32 fallback_texture);
 
+/// A unit tracer beam: a thin bright box from the origin one unit along -Z,
+/// stretched to the shot at queue time.
+[[nodiscard]] RenderModel make_tracer(gpu::Renderer& gpu, u32 fallback_texture);
+
+/// Four diagonal hit-marker ticks around the screen centre, camera space.
+[[nodiscard]] RenderModel make_hitmarker(gpu::Renderer& gpu, u32 fallback_texture);
+
 /// The fox companion's steering state, advanced per frame on the render side.
 struct FoxCompanion {
     f32 x = 6.0f;

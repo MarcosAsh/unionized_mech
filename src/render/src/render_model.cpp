@@ -127,13 +127,13 @@ namespace {
 
 // Shared record writer. `bounds_pad` widens the cull box, which skinned models
 // need because animation moves vertices beyond the bind-pose bounds.
-void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale,
+void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, core::Vec3 scale,
                    u32 vbuf, u32 vertex_base, f32 bounds_pad, const f32* tint) {
     if (!model.loaded) {
         return;
     }
     core::Mat4 world = core::Mat4::trs(pos, rot);
-    world = world * core::Mat4::scale(core::Vec3{scale, scale, scale});
+    world = world * core::Mat4::scale(scale);
 
     for (u32 i = 0; i < model.submesh_count; ++i) {
         if (model.queued >= MAX_MODEL_DRAWS) {
@@ -171,11 +171,18 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
 }  // namespace
 
 void model_queue(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale) {
-    queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f, nullptr);
+    queue_records(model, slot, pos, rot, core::Vec3{scale, scale, scale},
+                  model.vertices.bindless_index, 0, 0.0f, nullptr);
 }
 
 void model_queue_tinted(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale,
                         const f32 tint[4]) {
+    queue_records(model, slot, pos, rot, core::Vec3{scale, scale, scale},
+                  model.vertices.bindless_index, 0, 0.0f, tint);
+}
+
+void model_queue_stretched(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
+                           core::Vec3 scale, const f32 tint[4]) {
     queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f, tint);
 }
 
@@ -275,8 +282,8 @@ void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline p
 
 void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
                          f32 scale) {
-    queue_records(model.base, slot, pos, rot, scale, model.skinned_verts.bindless_index,
-                  slot * model.vertex_count, 0.5f, nullptr);
+    queue_records(model.base, slot, pos, rot, core::Vec3{scale, scale, scale},
+                  model.skinned_verts.bindless_index, slot * model.vertex_count, 0.5f, nullptr);
 }
 
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,

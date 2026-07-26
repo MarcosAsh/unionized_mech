@@ -2,6 +2,8 @@
 
 #include "core/assert.h"
 #include "core/file.h"
+
+#include <cmath>
 #include "core/log.h"
 #include "core/types.h"
 #include "sim/sim.h"
@@ -199,6 +201,79 @@ static void test_tape_round_trip() {
     ASSERT(hash(a) == hash(b));
 }
 
+// Firing straight at an enemy damages and eventually kills it: the whole
+// hitscan chain proven mechanically.
+static void test_hitscan_kills() {
+    World w{};
+    // Only two characters matter: the shooter at the origin aiming -Z, and an
+    // enemy 10m ahead. Everyone else is parked far away and on the shooter's
+    // team so they neither block nor participate.
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 30.0f;
+    w.chars[0].z = -60.0f;
+    w.chars[0].yaw = 0.0f;  // facing -Z
+    w.chars[1].x = 30.0f;
+    w.chars[1].z = -70.0f;
+    w.chars[1].team = 1;
+
+    const i16 start_health = w.chars[1].health;
+    InputCmd fire{};
+    fire.buttons = static_cast<u16>(Button::Fire);
+
+    World next{};
+    simulate(w, fire, next);
+    ASSERT(next.chars[1].health == start_health - 25);
+    ASSERT(next.chars[0].shot_age == 0);
+    ASSERT(next.chars[0].shot_hit == 1);
+
+    // Keep firing while tracking the target, which is a live bot that strafes
+    // and fights back. Four hits kill, credit the shooter, start the respawn.
+    World cur = next;
+    for (u32 i = 0; i < 300 && cur.chars[1].alive != 0; ++i) {
+        const Character& me = cur.chars[0];
+        const Character& tgt = cur.chars[1];
+        const f32 dx = tgt.x - me.x;
+        const f32 dz = tgt.z - me.z;
+        f32 want_yaw = std::atan2(dx, -dz);
+        f32 diff = want_yaw - me.yaw;
+        while (diff > 3.14159265f) {
+            diff -= 6.2831853f;
+        }
+        while (diff < -3.14159265f) {
+            diff += 6.2831853f;
+        }
+        f32 turn = diff / 0.0025f;  // inverse of the sim's LOOK_SCALE
+        if (turn > 3000.0f) {
+            turn = 3000.0f;
+        }
+        if (turn < -3000.0f) {
+            turn = -3000.0f;
+        }
+        InputCmd track = fire;
+        track.look_dx = static_cast<i16>(turn);
+        const f32 flat = std::sqrt(dx * dx + dz * dz);
+        const f32 dy = (tgt.y + 0.9f) - (me.y + 1.6f);
+        const f32 want_pitch = flat > 0.1f ? std::atan2(dy, flat) : 0.0f;
+        f32 pdiff = (want_pitch - me.pitch) / 0.0025f;
+        if (pdiff > 3000.0f) {
+            pdiff = 3000.0f;
+        }
+        if (pdiff < -3000.0f) {
+            pdiff = -3000.0f;
+        }
+        track.look_dy = static_cast<i16>(pdiff);
+        World n{};
+        simulate(cur, track, n);
+        cur = n;
+    }
+    ASSERT(cur.chars[1].alive == 0);
+    ASSERT(cur.chars[0].kills == 1);
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
@@ -207,6 +282,7 @@ int main() {
     test_mantle_vaults_ledge();
     test_ledge_climb();
     test_tape_round_trip();
+    test_hitscan_kills();
     test_map_round_trip();
     core::log_info("sim_tests: all passed");
     return 0;

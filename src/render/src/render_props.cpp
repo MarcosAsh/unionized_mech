@@ -115,9 +115,10 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
 }
 
 RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {
-    // Three boxes: barrel and grip in gunmetal, a sight blade in accent orange.
-    static asset::MeshVertex verts[3 * 24];
-    static u32 indices[3 * 36];
+    // Barrel and grip in gunmetal, then the sight blade and crosshair ticks in
+    // the bright accent colour.
+    static asset::MeshVertex verts[7 * 24];
+    static u32 indices[7 * 36];
     u32 vc = 0;
     u32 ic = 0;
     add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 0.0f, -0.10f},
@@ -147,10 +148,84 @@ RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {
         }
     }
 
+    // The crosshair rides in the viewmodel model: these offsets cancel the
+    // camera anchor so the ticks sit dead centre of the view.
+    const core::Vec3 recenter{-0.17f, 0.14f, -0.87f};  // anchor is (0.17,-0.14,-0.33)
+    const f32 gap = 0.012f;
+    const f32 arm = 0.010f;
+    const f32 thick = 0.0016f;
+    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{gap + arm * 0.5f, 0.0f, 0.0f},
+                 core::Vec3{arm * 0.5f, thick, thick});
+    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{-gap - arm * 0.5f, 0.0f, 0.0f},
+                 core::Vec3{arm * 0.5f, thick, thick});
+    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{0.0f, gap + arm * 0.5f, 0.0f},
+                 core::Vec3{thick, arm * 0.5f, thick});
+    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{0.0f, -gap - arm * 0.5f, 0.0f},
+                 core::Vec3{thick, arm * 0.5f, thick});
+    subs[1].index_count = 36 + 4 * 36;  // sight blade plus the crosshair ticks
+
     asset::MeshData mesh;
     mesh.vertices = core::Span<const asset::MeshVertex>(verts, vc);
     mesh.indices = core::Span<const u32>(indices, ic);
     mesh.submeshes = core::Span<const asset::Submesh>(subs, 2);
+    return model_from_data(gpu, mesh, fallback_texture);
+}
+
+RenderModel make_tracer(gpu::Renderer& gpu, u32 fallback_texture) {
+    static asset::MeshVertex verts[24];
+    static u32 indices[36];
+    u32 vc = 0;
+    u32 ic = 0;
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 0.0f, -0.5f},
+                 core::Vec3{1.0f, 1.0f, 0.5f});
+    static asset::Submesh sub;
+    sub.index_count = 36;
+    sub.texture = asset::NO_TEXTURE;
+    sub.color[0] = 3.0f;  // over-bright so lighting cannot dim it much
+    sub.color[1] = 2.6f;
+    sub.color[2] = 1.6f;
+    sub.bounds_min[0] = -1.0f;
+    sub.bounds_min[1] = -1.0f;
+    sub.bounds_min[2] = -1.0f;
+    sub.bounds_max[0] = 1.0f;
+    sub.bounds_max[1] = 1.0f;
+    sub.bounds_max[2] = 0.0f;
+    asset::MeshData mesh;
+    mesh.vertices = core::Span<const asset::MeshVertex>(verts, vc);
+    mesh.indices = core::Span<const u32>(indices, ic);
+    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
+    return model_from_data(gpu, mesh, fallback_texture);
+}
+
+RenderModel make_hitmarker(gpu::Renderer& gpu, u32 fallback_texture) {
+    static asset::MeshVertex verts[4 * 24];
+    static u32 indices[4 * 36];
+    u32 vc = 0;
+    u32 ic = 0;
+    // Four ticks on the diagonals, at 45 degrees, just outside the crosshair.
+    const f32 d = 0.026f;
+    for (u32 i = 0; i < 4; ++i) {
+        const f32 sx = (i & 1) != 0 ? 1.0f : -1.0f;
+        const f32 sy = (i & 2) != 0 ? 1.0f : -1.0f;
+        add_mesh_box(verts, indices, &vc, &ic, core::Vec3{sx * d, sy * d, 0.0f},
+                     core::Vec3{0.008f, 0.0016f, 0.0016f});
+    }
+    static asset::Submesh sub;
+    sub.index_count = 4 * 36;
+    sub.texture = asset::NO_TEXTURE;
+    sub.color[0] = 3.0f;
+    sub.color[1] = 0.6f;
+    sub.color[2] = 0.5f;
+    sub.bounds_min[0] = -0.1f;
+    sub.bounds_min[1] = -0.1f;
+    sub.bounds_min[2] = -0.1f;
+    sub.bounds_max[0] = 0.1f;
+    sub.bounds_max[1] = 0.1f;
+    sub.bounds_max[2] = 0.1f;
+    asset::MeshData mesh;
+    mesh.vertices = core::Span<const asset::MeshVertex>(verts, vc);
+    mesh.indices = core::Span<const u32>(indices, ic);
+    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
     return model_from_data(gpu, mesh, fallback_texture);
 }
 

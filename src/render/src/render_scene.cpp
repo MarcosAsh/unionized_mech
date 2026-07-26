@@ -60,6 +60,8 @@ struct SceneModels {
     SkinnedModel fox;
     RenderModel viewmodel;
     RenderModel trooper;
+    RenderModel tracer;
+    RenderModel hitmarker;
     FoxCompanion fox_state;
     gpu::Blas level_blas;
     gpu::Blas trooper_blas;
@@ -120,6 +122,8 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
                                             scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
     scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
+    scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
+    scene.models_->hitmarker = make_hitmarker(gpu, scene.models_->white_texture);
 
     // On ray tracing hardware, every caster gets a BLAS and the sun shadows
     // trace against the scene instead of sampling the shadow map. The fox BLAS
@@ -261,6 +265,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->fox.base);
     model_begin(models_->viewmodel);
     model_begin(models_->trooper);
+    model_begin(models_->tracer);
+    model_begin(models_->hitmarker);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
@@ -304,11 +310,47 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                            rot, 1.0f, TEAM_TINTS[other.team & 1]);
     }
 
+    // Tracers: a bright beam along each recent shot, from the muzzle for the
+    // player and from the eyes for everyone else.
+    for (u32 i = 0; i < sim::MAX_PLAYERS; ++i) {
+        const sim::Character& shooter = curr.chars[i];
+        if (shooter.alive == 0 || shooter.shot_age > 2) {
+            continue;
+        }
+        const f32 scp = std::cos(shooter.pitch);
+        const core::Vec3 dir{std::sin(shooter.yaw) * scp, std::sin(shooter.pitch),
+                             -std::cos(shooter.yaw) * scp};
+        core::Vec3 origin{shooter.x, shooter.y + 1.6f, shooter.z};
+        if (i == 0) {
+            const core::Vec3 s_right{std::cos(shooter.yaw), 0.0f, std::sin(shooter.yaw)};
+            origin += s_right * 0.17f + dir * 0.5f + core::Vec3{0.0f, -0.12f, 0.0f};
+        }
+        const f32 beam_pitch = std::asin(dir.y > 1.0f ? 1.0f : (dir.y < -1.0f ? -1.0f : dir.y));
+        const f32 beam_yaw = std::atan2(dir.x, -dir.z);
+        const core::Quat q_yaw = core::Quat::from_axis_half(
+            core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(beam_yaw * 0.5f), std::cos(beam_yaw * 0.5f));
+        const core::Quat q_pitch = core::Quat::from_axis_half(
+            core::Vec3{1.0f, 0.0f, 0.0f}, std::sin(beam_pitch * 0.5f),
+            std::cos(beam_pitch * 0.5f));
+        const f32 fade[4] = {1.0f - 0.3f * static_cast<f32>(shooter.shot_age),
+                             1.0f - 0.3f * static_cast<f32>(shooter.shot_age), 1.0f, 1.0f};
+        model_queue_stretched(models_->tracer, frame.slot, origin, q_yaw * q_pitch,
+                              core::Vec3{0.02f, 0.02f, shooter.last_shot_t}, fade);
+    }
+
     // The first-person viewmodel lives in camera space and is drawn with its
     // own fixed-FOV projection, so it stays rigidly glued to the view no
-    // matter what the world camera does (speed FOV, roll, interpolation).
-    model_queue(models_->viewmodel, frame.slot, core::Vec3{0.17f, -0.14f, -0.33f}, core::Quat{},
-                1.0f);
+    // matter what the world camera does (speed FOV, roll, interpolation). The
+    // muzzle kicks back for a few frames after firing.
+    const f32 kick =
+        curr.player().shot_age < 4 ? (4.0f - static_cast<f32>(curr.player().shot_age)) * 0.012f
+                                   : 0.0f;
+    model_queue(models_->viewmodel, frame.slot, core::Vec3{0.17f, -0.14f, -0.33f + kick},
+                core::Quat{}, 1.0f);
+    if (curr.player().shot_hit != 0 && curr.player().shot_age < 8) {
+        model_queue(models_->hitmarker, frame.slot, core::Vec3{0.0f, 0.0f, -1.2f}, core::Quat{},
+                    1.0f);
+    }
 
     // The sun volume follows the camera: a tight orthographic box gives dense
     // shadow texels where the player is looking, and the border-white sampler
@@ -336,9 +378,11 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[5] = {&models_->duck, &models_->sponza, &models_->fox.base,
-                                         &models_->viewmodel, &models_->trooper};
-    for (u32 i = 0; i < 5; ++i) {
+    const RenderModel* fill_models[7] = {&models_->duck,      &models_->sponza,
+                                         &models_->fox.base,  &models_->viewmodel,
+                                         &models_->trooper,   &models_->tracer,
+                                         &models_->hitmarker};
+    for (u32 i = 0; i < 7; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -373,6 +417,10 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot, PASS_CAMERA);
+    model_cull(models_->tracer, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_CAMERA);
+    model_cull(models_->hitmarker, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_CAMERA);
     // Shadow casters are culled permissively: the sun sees the whole map.
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
                frame.slot, PASS_SHADOW);
@@ -527,6 +575,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                       frame.slot);
     model_draw_culled(models_->trooper, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
+    model_draw_culled(models_->tracer, frame.cmd, mesh_layout_, view_proj, globals_idx,
+                      frame.slot);
     // The viewmodel draws into a compressed near slice of the depth range so
     // world geometry can never occlude it, the classic viewmodel depth hack.
     VkViewport vm_viewport{};
@@ -536,6 +586,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);
     const Mat4 vm_proj = perspective(1.05f, aspect, 0.05f, 10.0f);
     model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, globals_idx,
+                      frame.slot);
+    model_draw_culled(models_->hitmarker, frame.cmd, mesh_layout_, vm_proj, globals_idx,
                       frame.slot);
     vm_viewport.maxDepth = 1.0f;
     vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);

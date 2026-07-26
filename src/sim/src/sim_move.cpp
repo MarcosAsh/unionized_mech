@@ -73,6 +73,9 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     if (c.fire_cooldown > 0) {
         c.fire_cooldown -= 1;
     }
+    if (c.shot_age < 255) {
+        c.shot_age += 1;
+    }
 
     // Wish direction on the ground plane, relative to yaw. At yaw 0 the
     // character faces -Z.

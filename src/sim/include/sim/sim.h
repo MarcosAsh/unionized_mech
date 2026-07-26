@@ -88,6 +88,7 @@ struct Character {
     f32 wall_nx = 0.0f;  ///< Nearby wall normal (wallrun or airborne approach).
     f32 wall_nz = 0.0f;
     f32 land_impact = 0.0f;  ///< Fall speed at the last landing, decaying.
+    f32 last_shot_t = 0.0f;  ///< Distance the last shot travelled.
     u16 wallrun_ticks = 0;   ///< Ticks spent on the current wall.
     u16 respawn_ticks = 0;   ///< Ticks until respawn while dead.
     u16 kills = 0;
@@ -102,11 +103,11 @@ struct Character {
     u8 coyote_ticks = 0;   ///< Ticks since last grounded, saturating.
     u8 jump_buffer = 0;    ///< Ticks a buffered jump press stays valid.
     u8 fire_cooldown = 0;  ///< Ticks until the weapon can fire again.
-    u8 pad0 = 0;
-    u8 pad1 = 0;
+    u8 shot_age = 255;     ///< Ticks since this character last fired, saturating.
+    u8 shot_hit = 0;       ///< 1 when the last shot damaged someone.
 };
 
-static_assert(sizeof(Character) == 64, "Character layout must stay packed for hashing");
+static_assert(sizeof(Character) == 68, "Character layout must stay packed for hashing");
 
 /// The whole simulation state: the match. Trivially copyable so it can be
 /// snapshotted and hashed by value. Slot 0 is the player; bot inputs are

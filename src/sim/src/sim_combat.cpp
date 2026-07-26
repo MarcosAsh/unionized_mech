@@ -118,6 +118,9 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
                 hit = static_cast<i32>(j);
             }
         }
+        shooter.last_shot_t = best_t;
+        shooter.shot_age = 0;
+        shooter.shot_hit = hit >= 0 ? 1 : 0;
         if (hit >= 0) {
             Character& target = next.chars[hit];
             target.health = static_cast<i16>(target.health - SHOT_DAMAGE);
