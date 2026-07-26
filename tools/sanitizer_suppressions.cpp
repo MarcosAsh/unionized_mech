@@ -28,5 +28,7 @@ extern "C" const char* __lsan_default_suppressions(void) {
            "leak:libgallium\n"
            "leak:libLLVM\n"
            "leak:swrast\n"
-           "leak:iris_dri\n";
+           "leak:iris_dri\n"
+           "leak:libvulkan_intel\n"
+           "leak:libvulkan.so\n";
 }
