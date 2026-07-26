@@ -45,8 +45,8 @@ static void test_replay_twice_identical() {
 // simulate must not touch prev, and identical inputs must give identical output.
 static void test_simulate_is_pure() {
     World w{};
-    w.cam_x = 3.0f;
-    w.vel_x = 1.0f;
+    w.chars[0].x = 3.0f;
+    w.chars[0].vx = 1.0f;
     const InputCmd cmd = scripted(7);
 
     World a{};
@@ -55,8 +55,8 @@ static void test_simulate_is_pure() {
     simulate(w, cmd, b);
 
     ASSERT(hash(a) == hash(b));
-    ASSERT(w.cam_x == 3.0f);
-    ASSERT(w.vel_x == 1.0f);
+    ASSERT(w.chars[0].x == 3.0f);
+    ASSERT(w.chars[0].vx == 1.0f);
 }
 
 static void test_tick_advances() {
@@ -99,8 +99,8 @@ static void test_fixed_timestep() {
 // level's mantle stairs put a 1m step at z=-36 in front of a spawn at z=-34.
 static void test_mantle_vaults_ledge() {
     World w{};
-    w.cam_x = -28.0f;
-    w.cam_z = -34.0f;
+    w.chars[0].x = -28.0f;
+    w.chars[0].z = -34.0f;
     bool topped = false;
     for (u32 i = 0; i < 180; ++i) {
         InputCmd c{};
@@ -109,7 +109,7 @@ static void test_mantle_vaults_ledge() {
         World next{};
         simulate(w, c, next);
         w = next;
-        if (w.on_ground != 0 && w.cam_y == 1.0f) {
+        if (w.chars[0].on_ground != 0 && w.chars[0].y == 1.0f) {
             topped = true;
         }
     }
@@ -121,8 +121,8 @@ static void test_mantle_vaults_ledge() {
 // reaching the top proves the ledge climb works.
 static void test_ledge_climb() {
     World w{};
-    w.cam_x = -18.0f;
-    w.cam_z = -34.0f;  // south of the 3m mantle stair at z=-36
+    w.chars[0].x = -18.0f;
+    w.chars[0].z = -34.0f;  // south of the 3m mantle stair at z=-36
     bool topped = false;
     for (u32 i = 0; i < 300; ++i) {
         InputCmd c{};
@@ -132,7 +132,7 @@ static void test_ledge_climb() {
         World next{};
         simulate(w, c, next);
         w = next;
-        if (w.on_ground != 0 && w.cam_y == 3.0f) {
+        if (w.chars[0].on_ground != 0 && w.chars[0].y == 3.0f) {
             topped = true;
         }
     }

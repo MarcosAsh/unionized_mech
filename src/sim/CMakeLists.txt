@@ -1,7 +1,10 @@
 add_library(sim STATIC
     src/sim.cpp
+    src/sim_bot.cpp
+    src/sim_combat.cpp
     src/sim_level.cpp
     src/sim_math.cpp
+    src/sim_move.cpp
     src/sim_tape.cpp)
 
 # sim depends only on core. It never sees platform, gpu, render, or SDL.

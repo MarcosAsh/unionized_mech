@@ -162,6 +162,11 @@ void model_begin(RenderModel& model);
 /// submesh into this frame's slice.
 void model_queue(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale);
 
+/// model_queue with the submesh colours multiplied by `tint` (rgba), for
+/// per-instance variation like team colours.
+void model_queue_tinted(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale,
+                        const f32 tint[4]);
+
 /// Record the cull dispatch for this frame's queued records into the given
 /// pass's command slice. The caller wraps the fill and dispatch in barriers.
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,

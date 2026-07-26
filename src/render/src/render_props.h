@@ -44,6 +44,10 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 /// system that real arm art replaces later.
 [[nodiscard]] RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture);
 
+/// A placeholder soldier made of boxes, tinted per team at queue time. Real
+/// character art replaces it later.
+[[nodiscard]] RenderModel make_trooper(gpu::Renderer& gpu, u32 fallback_texture);
+
 /// The fox companion's steering state, advanced per frame on the render side.
 struct FoxCompanion {
     f32 x = 6.0f;

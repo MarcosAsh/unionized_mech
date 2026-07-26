@@ -59,8 +59,10 @@ struct SceneModels {
     RenderModel sponza;
     SkinnedModel fox;
     RenderModel viewmodel;
+    RenderModel trooper;
     FoxCompanion fox_state;
     gpu::Blas level_blas;
+    gpu::Blas trooper_blas;
     gpu::Blas duck_blas;
     gpu::Blas sponza_blas;
     gpu::Blas fox_blas;
@@ -117,6 +119,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
                                             scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
+    scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
 
     // On ray tracing hardware, every caster gets a BLAS and the sun shadows
     // trace against the scene instead of sampling the shadow map. The fox BLAS
@@ -140,6 +143,10 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
                 sizeof(asset::MeshVertex), scene.models_->sponza.indices.handle,
                 scene.models_->sponza.total_indices);
         }
+        scene.models_->trooper_blas = gpu.create_blas(
+            scene.models_->trooper.vertices.handle, scene.models_->trooper.total_vertices,
+            sizeof(asset::MeshVertex), scene.models_->trooper.indices.handle,
+            scene.models_->trooper.total_indices);
         if (scene.models_->fox.base.loaded && scene.models_->fox.vertex_count > 0) {
             scene.models_->fox_blas = gpu.create_blas(
                 scene.models_->fox.base.vertices.handle, scene.models_->fox.vertex_count,
@@ -200,15 +207,15 @@ void Scene::maybe_reload() {
 
 void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr,
                  f32 alpha) {
-    const f32 cam_x = lerp(prev.cam_x, curr.cam_x, alpha);
-    const f32 cam_y = lerp(prev.cam_y, curr.cam_y, alpha);
-    const f32 cam_z = lerp(prev.cam_z, curr.cam_z, alpha);
-    const f32 yaw = angle_lerp(prev.cam_yaw, curr.cam_yaw, alpha);
-    const f32 pitch = lerp(prev.cam_pitch, curr.cam_pitch, alpha);
+    const f32 cam_x = lerp(prev.player().x, curr.player().x, alpha);
+    const f32 cam_y = lerp(prev.player().y, curr.player().y, alpha);
+    const f32 cam_z = lerp(prev.player().z, curr.player().z, alpha);
+    const f32 yaw = angle_lerp(prev.player().yaw, curr.player().yaw, alpha);
+    const f32 pitch = lerp(prev.player().pitch, curr.player().pitch, alpha);
 
     // The eye dips on landing by the stored impact, easing back as it decays.
-    f32 eye_height = curr.ducked != 0 ? 0.9f : 1.7f;
-    f32 impact = curr.land_impact;
+    f32 eye_height = curr.player().ducked != 0 ? 0.9f : 1.7f;
+    f32 impact = curr.player().land_impact;
     if (impact > 12.0f) {
         impact = 12.0f;
     }
@@ -218,18 +225,18 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // rather than a snap. A nearby wall while airborne gets a partial lean as
     // anticipation before the run starts. Cosmetic and render-side only.
     f32 target_roll = 0.0f;
-    const bool near_wall = curr.wall_nx != 0.0f || curr.wall_nz != 0.0f;
+    const bool near_wall = curr.player().wall_nx != 0.0f || curr.player().wall_nz != 0.0f;
     if (near_wall) {
         const f32 facing_x = std::sin(yaw);
         const f32 facing_z = -std::cos(yaw);
-        const f32 side = facing_x * curr.wall_nz - facing_z * curr.wall_nx;
-        target_roll = side * (curr.state == sim::MoveState::Wallrun ? 0.15f : 0.07f);
+        const f32 side = facing_x * curr.player().wall_nz - facing_z * curr.player().wall_nx;
+        target_roll = side * (curr.player().state == sim::MoveState::Wallrun ? 0.15f : 0.07f);
     }
     cur_roll_ += (target_roll - cur_roll_) * 0.2f;
 
     // Speed-linked field of view, the strongest "I am fast" signal. Widens as
     // horizontal speed climbs past run speed, eased to avoid pumping.
-    const f32 hspeed = std::sqrt(curr.vel_x * curr.vel_x + curr.vel_z * curr.vel_z);
+    const f32 hspeed = std::sqrt(curr.player().vx * curr.player().vx + curr.player().vz * curr.player().vz);
     f32 speed_frac = (hspeed - 8.0f) / 8.0f;
     if (speed_frac < 0.0f) {
         speed_frac = 0.0f;
@@ -253,6 +260,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->sponza);
     model_begin(models_->fox.base);
     model_begin(models_->viewmodel);
+    model_begin(models_->trooper);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
@@ -281,6 +289,20 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(models_->fox_state.yaw * 0.5f),
         std::cos(models_->fox_state.yaw * 0.5f));
     skinned_model_queue(models_->fox, frame.slot, fox_pos, fox_rot, 0.02f);
+
+    // Everyone else in the match, tinted by team.
+    constexpr f32 TEAM_TINTS[2][4] = {{0.30f, 0.50f, 1.00f, 1.0f}, {1.00f, 0.42f, 0.22f, 1.0f}};
+    for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
+        const sim::Character& other = curr.chars[i];
+        if (other.alive == 0) {
+            continue;
+        }
+        const core::Quat rot = core::Quat::from_axis_half(
+            core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(other.yaw * 0.5f),
+            std::cos(other.yaw * 0.5f));
+        model_queue_tinted(models_->trooper, frame.slot, core::Vec3{other.x, other.y, other.z},
+                           rot, 1.0f, TEAM_TINTS[other.team & 1]);
+    }
 
     // The first-person viewmodel lives in camera space and is drawn with its
     // own fixed-FOV projection, so it stays rigidly glued to the view no
@@ -314,9 +336,9 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[4] = {&models_->duck, &models_->sponza, &models_->fox.base,
-                                         &models_->viewmodel};
-    for (u32 i = 0; i < 4; ++i) {
+    const RenderModel* fill_models[5] = {&models_->duck, &models_->sponza, &models_->fox.base,
+                                         &models_->viewmodel, &models_->trooper};
+    for (u32 i = 0; i < 5; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -349,12 +371,16 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // that accept everything, since its record is in camera space.
     model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
+    model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot, PASS_CAMERA);
     // Shadow casters are culled permissively: the sun sees the whole map.
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
                frame.slot, PASS_SHADOW);
     model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
     model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_SHADOW);
+    model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
     skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_,
                          fox_clip_a, fox_clip_b, fox_blend, anim_time, frame.slot);
@@ -366,7 +392,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     if (rt_) {
         // Ray traced sun: rebuild the fox BLAS from this frame's skinned
         // vertices and the TLAS from the live instance transforms.
-        VkAccelerationStructureInstanceKHR instances[8];
+        VkAccelerationStructureInstanceKHR instances[16];
         u32 instance_count = 0;
         instances[instance_count++] = make_rt_instance(Mat4{}, models_->level_blas.address);
         if (models_->duck_blas.handle != VK_NULL_HANDLE) {
@@ -384,6 +410,20 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         if (models_->sponza_blas.handle != VK_NULL_HANDLE) {
             instances[instance_count++] = make_rt_instance(
                 core::Mat4::translation(SPONZA_POS), models_->sponza_blas.address);
+        }
+        if (models_->trooper_blas.handle != VK_NULL_HANDLE) {
+            for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
+                const sim::Character& other = curr.chars[i];
+                if (other.alive == 0) {
+                    continue;
+                }
+                const core::Quat rot = core::Quat::from_axis_half(
+                    core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(other.yaw * 0.5f),
+                    std::cos(other.yaw * 0.5f));
+                instances[instance_count++] = make_rt_instance(
+                    core::Mat4::trs(core::Vec3{other.x, other.y, other.z}, rot),
+                    models_->trooper_blas.address);
+            }
         }
         if (models_->fox_blas.handle != VK_NULL_HANDLE) {
             core::Mat4 fox_world = core::Mat4::trs(fox_pos, fox_rot);
@@ -414,7 +454,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     sun_in.casters[0] = &models_->duck;
     sun_in.casters[1] = &models_->sponza;
     sun_in.casters[2] = &models_->fox.base;
-    sun_in.caster_count = 3;
+    sun_in.casters[3] = &models_->trooper;
+    sun_in.caster_count = 4;
     sun_in.sun_view_proj = sun_view_proj;
     sun_in.slot = frame.slot;
     record_sun_shadow(sun_in);
@@ -483,6 +524,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, globals_idx,
+                      frame.slot);
+    model_draw_culled(models_->trooper, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
     // The viewmodel draws into a compressed near slice of the depth range so
     // world geometry can never occlude it, the classic viewmodel depth hack.

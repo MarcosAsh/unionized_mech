@@ -103,11 +103,7 @@ int main(int argc, char** argv) {
 
     sim::World prev_world{};
     sim::World curr_world{};
-    const sim::Spawn spawn = sim::level_spawn();
-    curr_world.cam_x = spawn.x;
-    curr_world.cam_y = spawn.y;
-    curr_world.cam_z = spawn.z;
-    curr_world.cam_yaw = spawn.yaw;
+    sim::init_match(curr_world);
     prev_world = curr_world;
     sim::FixedTimestep timestep;
 
@@ -164,19 +160,19 @@ int main(int argc, char** argv) {
         if (now_ns - report_ns >= 1000000000ull) {
             const f64 dt = static_cast<f64>(now_ns - report_ns) * 1e-9;
             const f64 cpu_ms = dt * 1000.0 / static_cast<f64>(frames - frames_at_report);
-            const f64 hspeed =
-                static_cast<f64>(curr_world.vel_x) * static_cast<f64>(curr_world.vel_x) +
-                static_cast<f64>(curr_world.vel_z) * static_cast<f64>(curr_world.vel_z);
+            const sim::Character& me = curr_world.player();
+            const f64 hspeed = static_cast<f64>(me.vx) * static_cast<f64>(me.vx) +
+                               static_cast<f64>(me.vz) * static_cast<f64>(me.vz);
             const char* state_names[5] = {"ground", "slide", "air", "wallrun", "climb"};
             core::log_infof(
-                "t=%.0fs  fps=%.0f  cpu=%.2fms  gpu=%.2fms  ticks/s=%.0f  speed=%.1f  %s",
+                "t=%.0fs fps=%.0f gpu=%.2fms speed=%.1f %s  hp=%d kills=%u",
                 static_cast<f64>(now_ns - start_ns) * 1e-9,
-                static_cast<f64>(frames - frames_at_report) / dt, cpu_ms,
-                static_cast<f64>(renderer.last_gpu_ms()),
-                static_cast<f64>(total_ticks - ticks_at_report) / dt, __builtin_sqrt(hspeed),
-                state_names[static_cast<u8>(curr_world.state) < 5
-                                ? static_cast<u8>(curr_world.state)
-                                : 2]);
+                static_cast<f64>(frames - frames_at_report) / dt,
+                static_cast<f64>(renderer.last_gpu_ms()), __builtin_sqrt(hspeed),
+                state_names[static_cast<u8>(me.state) < 5 ? static_cast<u8>(me.state) : 2],
+                static_cast<int>(me.health), static_cast<unsigned>(me.kills));
+            (void)cpu_ms;
+            (void)ticks_at_report;
             report_ns = now_ns;
             ticks_at_report = total_ticks;
             frames_at_report = frames;

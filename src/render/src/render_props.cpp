@@ -154,6 +154,50 @@ RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {
     return model_from_data(gpu, mesh, fallback_texture);
 }
 
+RenderModel make_trooper(gpu::Renderer& gpu, u32 fallback_texture) {
+    // Legs, torso, head, and a visor stripe. Near-white so the team tint reads.
+    static asset::MeshVertex verts[4 * 24];
+    static u32 indices[4 * 36];
+    u32 vc = 0;
+    u32 ic = 0;
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 0.45f, 0.0f},
+                 core::Vec3{0.16f, 0.45f, 0.12f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 1.15f, 0.0f},
+                 core::Vec3{0.24f, 0.28f, 0.15f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 1.58f, 0.0f},
+                 core::Vec3{0.11f, 0.13f, 0.11f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 1.60f, -0.09f},
+                 core::Vec3{0.09f, 0.03f, 0.03f});
+
+    static asset::Submesh subs[2];
+    subs[0].index_offset = 0;
+    subs[0].index_count = 3 * 36;
+    subs[0].texture = asset::NO_TEXTURE;
+    subs[0].color[0] = 0.85f;
+    subs[0].color[1] = 0.85f;
+    subs[0].color[2] = 0.85f;
+    subs[1].index_offset = 3 * 36;
+    subs[1].index_count = 36;
+    subs[1].texture = asset::NO_TEXTURE;
+    subs[1].color[0] = 0.1f;
+    subs[1].color[1] = 0.1f;
+    subs[1].color[2] = 0.1f;
+    for (u32 i = 0; i < 2; ++i) {
+        subs[i].bounds_min[0] = -0.3f;
+        subs[i].bounds_min[1] = 0.0f;
+        subs[i].bounds_min[2] = -0.3f;
+        subs[i].bounds_max[0] = 0.3f;
+        subs[i].bounds_max[1] = 1.8f;
+        subs[i].bounds_max[2] = 0.3f;
+    }
+
+    asset::MeshData mesh;
+    mesh.vertices = core::Span<const asset::MeshVertex>(verts, vc);
+    mesh.indices = core::Span<const u32>(indices, ic);
+    mesh.submeshes = core::Span<const asset::Submesh>(subs, 2);
+    return model_from_data(gpu, mesh, fallback_texture);
+}
+
 void fox_companion_update(FoxCompanion& fox, f32 player_x, f32 player_z, f32 dt) {
     const f32 dx = player_x - fox.x;
     const f32 dz = player_z - fox.z;

@@ -70,30 +70,55 @@ static_assert(std::is_standard_layout_v<InputCmd>);
 /// The character's movement mode this tick.
 enum class MoveState : u8 { Ground, Slide, Air, Wallrun, Climb };
 
-/// The whole simulation state. Scalars stand in for vectors and quaternions
-/// until the M1 math module lands. Trivially copyable so it can be snapshotted
-/// and hashed by value.
-struct World {
-    TickId tick;
-    f32 cam_x = 0.0f;      ///< Feet position, world X.
-    f32 cam_y = 0.0f;      ///< Feet height above the floor.
-    f32 cam_z = 0.0f;      ///< Feet position, world Z.
-    f32 cam_yaw = 0.0f;    ///< Radians, accumulated. Trig lives in render only.
-    f32 cam_pitch = 0.0f;  ///< Radians, clamped.
-    f32 vel_x = 0.0f;      ///< Velocity, world units per second.
-    f32 vel_y = 0.0f;
-    f32 vel_z = 0.0f;
-    f32 wall_nx = 0.0f;    ///< Nearby wall normal (wallrun or airborne approach).
+/// Characters in a match: the player in slot 0 and nine bots, five per team.
+constexpr u32 MAX_PLAYERS = 10;
+
+/// One character's full state: the movement controller plus combat. A plain
+/// struct rather than structure-of-arrays because ten of these fit in cache
+/// either way and byte-wise hashing wants a packed layout (asserted below).
+struct Character {
+    f32 x = 0.0f;  ///< Feet position.
+    f32 y = 0.0f;
+    f32 z = 0.0f;
+    f32 yaw = 0.0f;    ///< Radians. Trig in sim goes through sim_math only.
+    f32 pitch = 0.0f;  ///< Radians, clamped.
+    f32 vx = 0.0f;     ///< Velocity, units per second.
+    f32 vy = 0.0f;
+    f32 vz = 0.0f;
+    f32 wall_nx = 0.0f;  ///< Nearby wall normal (wallrun or airborne approach).
     f32 wall_nz = 0.0f;
     f32 land_impact = 0.0f;  ///< Fall speed at the last landing, decaying.
-    u16 wallrun_ticks = 0;      ///< Ticks spent on the current wall.
+    u16 wallrun_ticks = 0;   ///< Ticks spent on the current wall.
+    u16 respawn_ticks = 0;   ///< Ticks until respawn while dead.
+    u16 kills = 0;
+    i16 health = 100;
     MoveState state = MoveState::Air;
+    u8 team = 0;           ///< 0 or 1.
+    u8 alive = 1;
     u8 on_ground = 0;      ///< 1 while standing on the floor.
     u8 ducked = 0;         ///< 1 while crouching or sliding.
     u8 air_jumps = 0;      ///< Remaining mid-air jumps (double jump).
     u8 jump_was_down = 0;  ///< Jump button state last tick, for edge detection.
     u8 coyote_ticks = 0;   ///< Ticks since last grounded, saturating.
     u8 jump_buffer = 0;    ///< Ticks a buffered jump press stays valid.
+    u8 fire_cooldown = 0;  ///< Ticks until the weapon can fire again.
+    u8 pad0 = 0;
+    u8 pad1 = 0;
+};
+
+static_assert(sizeof(Character) == 64, "Character layout must stay packed for hashing");
+
+/// The whole simulation state: the match. Trivially copyable so it can be
+/// snapshotted and hashed by value. Slot 0 is the player; bot inputs are
+/// generated inside simulate from this state, deterministically.
+struct World {
+    TickId tick;
+    u32 seed = 0x4d454348u;  ///< Feeds every in-simulation random choice.
+    Character chars[MAX_PLAYERS];
+
+    /// The local player's character.
+    [[nodiscard]] const Character& player() const { return chars[0]; }
+    [[nodiscard]] Character& player() { return chars[0]; }
 };
 
 static_assert(std::is_trivially_copyable_v<World>);
@@ -123,6 +148,14 @@ struct Spawn {
 /// The loaded map's spawn point.
 [[nodiscard]] Spawn level_spawn();
 
+/// A team's spawn point for the character in `slot` (spread so characters do
+/// not stack).
+[[nodiscard]] Spawn team_spawn(u32 team, u32 slot);
+
+/// True when nothing solid blocks the segment from `a` to `b` (eye to eye
+/// visibility for bots and hitscan).
+[[nodiscard]] bool segment_clear(f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz);
+
 /// Load a map file, replacing the active level. The format is line-based text:
 /// `spawn x y z yaw`, `box x0 y0 z0 x1 y1 z1` for visible collision boxes, and
 /// `cbox ...` for invisible collision volumes. Without a loaded map the
@@ -134,9 +167,14 @@ struct Spawn {
 [[nodiscard]] core::Result<core::Unit, const char*> load_level(core::Arena& scratch,
                                                                const char* path);
 
-/// Advance the world by one tick. Pure: it reads `prev` and `cmd` and writes
-/// `next`, with no globals and no wall-clock. The same inputs always yield the
-/// same `next`, on every target platform.
+/// Reset the world to a fresh 5v5 match: slot 0 is the player on team 0, the
+/// rest are bots, everyone at their team spawns.
+void init_match(World& world);
+
+/// Advance the world by one tick. Pure: it reads `prev` and the player's `cmd`
+/// and writes `next`, with no globals and no wall-clock. Bot inputs derive
+/// deterministically from `prev` inside. The same inputs always yield the same
+/// `next`, on every target platform.
 void simulate(const World& prev, const InputCmd& cmd, World& next);
 
 /// A 64-bit hash of the world state, stable across platforms. Used by the

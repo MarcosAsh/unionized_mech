@@ -128,7 +128,7 @@ namespace {
 // Shared record writer. `bounds_pad` widens the cull box, which skinned models
 // need because animation moves vertices beyond the bind-pose bounds.
 void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale,
-                   u32 vbuf, u32 vertex_base, f32 bounds_pad) {
+                   u32 vbuf, u32 vertex_base, f32 bounds_pad, const f32* tint) {
     if (!model.loaded) {
         return;
     }
@@ -147,7 +147,7 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
         rec.rot[2] = rot.z;
         rec.rot[3] = rot.w;
         for (u32 c = 0; c < 4; ++c) {
-            rec.color[c] = sub.color[c];
+            rec.color[c] = tint != nullptr ? sub.color[c] * tint[c] : sub.color[c];
         }
         for (u32 c = 0; c < 3; ++c) {
             const f32 pad = bounds_pad * (sub.bounds_max[c] - sub.bounds_min[c]);
@@ -171,7 +171,12 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
 }  // namespace
 
 void model_queue(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale) {
-    queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f);
+    queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f, nullptr);
+}
+
+void model_queue_tinted(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale,
+                        const f32 tint[4]) {
+    queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f, tint);
 }
 
 SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch,
@@ -271,7 +276,7 @@ void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline p
 void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
                          f32 scale) {
     queue_records(model.base, slot, pos, rot, scale, model.skinned_verts.bindless_index,
-                  slot * model.vertex_count, 0.5f);
+                  slot * model.vertex_count, 0.5f, nullptr);
 }
 
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,

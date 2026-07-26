@@ -121,6 +121,23 @@ core::Span<const Aabb> visible_boxes() {
 
 Spawn level_spawn() { return level_loaded ? loaded_spawn : Spawn{}; }
 
+Spawn team_spawn(u32 team, u32 slot) {
+    // Team zero musters on the plaza's north edge facing south toward team
+    // one, who spawn on the walkway in front of the Sponza atrium.
+    Spawn spawn;
+    const f32 spread = static_cast<f32>(slot % 5) * 3.0f - 6.0f;
+    if (team == 0) {
+        spawn.x = spread;
+        spawn.z = 26.0f;
+        spawn.yaw = 0.0f;  // yaw 0 faces -Z, toward the far team
+    } else {
+        spawn.x = spread;
+        spawn.z = -64.0f;
+        spawn.yaw = 3.14159265f;  // faces +Z, toward the plaza
+    }
+    return spawn;
+}
+
 core::Result<core::Unit, const char*> load_level(core::Arena& scratch, const char* path) {
     using LoadResult = core::Result<core::Unit, const char*>;
 
