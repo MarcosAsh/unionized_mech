@@ -40,5 +40,8 @@ extern "C" const char* __lsan_default_suppressions(void) {
            "leak:swrast\n"
            "leak:iris_dri\n"
            "leak:libvulkan_intel\n"
-           "leak:libvulkan.so\n";
+           "leak:libvulkan.so\n"
+           // The pulseaudio client library parks per-process context state in
+           // its own threads and never frees it.
+           "leak:libpulse\n";
 }

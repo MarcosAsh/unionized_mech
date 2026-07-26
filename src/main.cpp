@@ -5,6 +5,7 @@
 #include "core/timer.h"
 #include "core/types.h"
 #include "gpu/gpu.h"
+#include "platform/audio.h"
 #include "platform/platform.h"
 #include "render/render.h"
 #include "sim/sim.h"
@@ -32,6 +33,45 @@ u64 parse_frame_cap(int argc, char** argv) {
         value = value * 10u + static_cast<u64>(*p - '0');
     }
     return value;
+}
+
+// One tick's sound edges, read off the before/after sim states. A shot lands
+// on the tick it fires, so every cue is a plain field comparison.
+void audio_events(platform::Audio& audio, const sim::World& before, const sim::World& after) {
+    const sim::Character& me = after.player();
+
+    // Shots: the firer's shot_age resets to zero on the fire tick, and a
+    // never-fired character is excluded by the zero cooldown.
+    for (u32 i = 0; i < sim::MAX_PLAYERS; ++i) {
+        const sim::Character& shooter = after.chars[i];
+        if (shooter.shot_age != 0 || shooter.fire_cooldown == 0 || shooter.alive == 0) {
+            continue;
+        }
+        if (i == 0) {
+            audio.play(platform::Sound::Fire, 0.8f);
+            if (shooter.shot_hit != 0) {
+                audio.play(platform::Sound::Hit, 0.7f);
+            }
+        } else {
+            const f32 dx = shooter.x - me.x;
+            const f32 dz = shooter.z - me.z;
+            const f32 d2 = dx * dx + dz * dz;
+            if (d2 < 60.0f * 60.0f) {
+                audio.play(platform::Sound::Fire,
+                           (1.0f - __builtin_sqrtf(d2) / 60.0f) * 0.4f);
+            }
+        }
+    }
+
+    if (before.player().alive != 0 && me.alive == 0) {
+        audio.play(platform::Sound::Death, 0.9f);
+    } else if (me.health < before.player().health) {
+        audio.play(platform::Sound::Hurt, 0.9f);
+    }
+    if (before.winner == 0 && after.winner != 0) {
+        const bool won = after.winner - 1 == me.team;
+        audio.play(won ? platform::Sound::Win : platform::Sound::Lose, 0.8f);
+    }
 }
 
 }  // namespace
@@ -94,6 +134,14 @@ int main(int argc, char** argv) {
     }
     i64 map_mtime = core::file_mtime(MAP_PATH);
 
+    core::Result<platform::Audio, const char*> audio_result = platform::Audio::open();
+    platform::Audio audio;
+    if (audio_result.is_ok()) {
+        audio = static_cast<platform::Audio&&>(audio_result.value());
+    } else {
+        core::log_infof("audio: %s, continuing silent", audio_result.error());
+    }
+
     render::Scene scene = render::Scene::create(renderer, permanent, scratch);
     scratch.reset();
     core::log_infof("window %ux%u. WASD moves, mouse looks, Escape quits.", win.width(),
@@ -129,6 +177,7 @@ int main(int argc, char** argv) {
             const sim::InputCmd cmd = win.capture_input(curr_world.tick);
             sim::World next{};
             sim::simulate(curr_world, cmd, next);
+            audio_events(audio, curr_world, next);
             curr_world = next;
             ++total_ticks;
         }
@@ -139,6 +188,7 @@ int main(int argc, char** argv) {
             renderer.end_frame();
         }
 
+        audio.update();
         frame.reset();
         ++frames;
 
