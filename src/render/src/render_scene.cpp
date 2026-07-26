@@ -150,8 +150,51 @@ struct SceneModels {
     RenderModel duck;
     RenderModel sponza;
     SkinnedModel fox;
+    RenderModel blob_shadow;
     u32 white_texture = 0;
 };
+
+namespace {
+
+// A dark disc laid on the ground under characters. Until real shadows arrive
+// in M5, this is what visually glues a moving thing to the floor.
+RenderModel make_blob_shadow(gpu::Renderer& gpu, u32 fallback_texture) {
+    constexpr u32 SEGMENTS = 16;
+    static asset::MeshVertex verts[SEGMENTS + 1];
+    static u32 indices[SEGMENTS * 3];
+    verts[0].pos = core::Vec3{0.0f, 0.0f, 0.0f};
+    verts[0].normal = core::Vec3{0.0f, 1.0f, 0.0f};
+    for (u32 i = 0; i < SEGMENTS; ++i) {
+        const f32 a = static_cast<f32>(i) * (6.2831853f / SEGMENTS);
+        verts[i + 1].pos = core::Vec3{std::cos(a), 0.0f, std::sin(a)};
+        verts[i + 1].normal = core::Vec3{0.0f, 1.0f, 0.0f};
+        indices[i * 3] = 0;
+        indices[i * 3 + 1] = 1 + (i + 1) % SEGMENTS;
+        indices[i * 3 + 2] = 1 + i;
+    }
+    static asset::Submesh sub;
+    sub.index_offset = 0;
+    sub.index_count = SEGMENTS * 3;
+    sub.texture = asset::NO_TEXTURE;
+    sub.color[0] = 0.10f;
+    sub.color[1] = 0.10f;
+    sub.color[2] = 0.12f;
+    sub.color[3] = 1.0f;
+    sub.bounds_min[0] = -1.0f;
+    sub.bounds_min[1] = -0.1f;
+    sub.bounds_min[2] = -1.0f;
+    sub.bounds_max[0] = 1.0f;
+    sub.bounds_max[1] = 0.1f;
+    sub.bounds_max[2] = 1.0f;
+
+    asset::MeshData mesh;
+    mesh.vertices = core::Span<const asset::MeshVertex>(verts, SEGMENTS + 1);
+    mesh.indices = core::Span<const u32>(indices, SEGMENTS * 3);
+    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
+    return model_from_data(gpu, mesh, fallback_texture);
+}
+
+}  // namespace
 
 Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch) {
     core::Array<Vertex> verts = scratch.make_array<Vertex>(65536);
@@ -189,6 +232,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
         model_load(gpu, scratch, ASSET_DIR "/sponza", scene.models_->white_texture);
     scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
                                             scene.models_->white_texture);
+    scene.models_->blob_shadow = make_blob_shadow(gpu, scene.models_->white_texture);
 
     scene.build_pipelines();
     scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
@@ -268,6 +312,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->duck);
     model_begin(models_->sponza);
     model_begin(models_->fox.base);
+    model_begin(models_->blob_shadow);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
@@ -280,17 +325,26 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // it stays smooth under interpolation. Clip 2 is Run in the Fox's clip list.
     const f32 anim_time =
         static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
-    const f32 circle_angle = anim_time * 0.6f;
-    const core::Vec3 fox_pos{18.0f * std::cos(circle_angle), 0.0f,
-                             18.0f * std::sin(circle_angle)};
+    const f32 circle_angle = anim_time * 0.35f;
+    const core::Vec3 fox_pos{12.0f * std::cos(circle_angle), 0.0f,
+                             12.0f * std::sin(circle_angle)};
     const core::Vec3 fox_dir{-std::sin(circle_angle), 0.0f, std::cos(circle_angle)};
     const f32 fox_yaw = std::atan2(fox_dir.x, fox_dir.z);
     const core::Quat fox_rot = core::Quat::from_axis_half(
         core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(fox_yaw * 0.5f), std::cos(fox_yaw * 0.5f));
     skinned_model_queue(models_->fox, frame.slot, fox_pos, fox_rot, 0.02f);
 
-    const RenderModel* fill_models[3] = {&models_->duck, &models_->sponza, &models_->fox.base};
-    for (u32 i = 0; i < 3; ++i) {
+    // Blob shadows glue the animated characters to the floor until M5 shadows.
+    const core::Vec3 lift{0.0f, 0.02f, 0.0f};  // above the floor, below the feet
+    model_queue(models_->blob_shadow, frame.slot, fox_pos + lift, core::Quat{}, 1.1f);
+    for (const DuckSpot& spot : DUCKS) {
+        model_queue(models_->blob_shadow, frame.slot, spot.pos + lift, core::Quat{},
+                    0.55f * spot.scale);
+    }
+
+    const RenderModel* fill_models[4] = {&models_->duck, &models_->sponza, &models_->fox.base,
+                                         &models_->blob_shadow};
+    for (u32 i = 0; i < 4; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * sizeof(u32), sizeof(u32), 0);
@@ -314,6 +368,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot);
     model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot);
+    model_cull(models_->blob_shadow, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               planes, frame.slot);
     skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_, 2,
                          anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -379,6 +435,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                             &bindless_set_, 0, nullptr);
     model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, frame.slot);
+    model_draw_culled(models_->blob_shadow, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, frame.slot);
 
     vkCmdEndRendering(frame.cmd);

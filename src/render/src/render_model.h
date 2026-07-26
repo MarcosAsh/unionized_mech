@@ -104,6 +104,11 @@ struct SkinnedModel {
 [[nodiscard]] RenderModel model_load(gpu::Renderer& gpu, core::Arena& scratch, const char* base,
                                      u32 fallback_texture);
 
+/// Upload an in-memory mesh as a model, for procedural geometry. Untextured
+/// submeshes use `fallback_texture`.
+[[nodiscard]] RenderModel model_from_data(gpu::Renderer& gpu, const asset::MeshData& mesh,
+                                          u32 fallback_texture);
+
 /// Load a rigged model: model_load plus `<base>.uskel`, `<base>.uskin`, and
 /// `<base>.<i>.uclip`, with the skinning buffers created. Clip storage comes
 /// from `permanent`, which must outlive the model.

@@ -81,6 +81,40 @@ RenderModel model_load(gpu::Renderer& gpu, core::Arena& scratch, const char* bas
     return model;
 }
 
+RenderModel model_from_data(gpu::Renderer& gpu, const asset::MeshData& mesh,
+                            u32 fallback_texture) {
+    RenderModel model;
+    if (mesh.submeshes.size() > MAX_MODEL_SUBMESHES) {
+        return model;
+    }
+    model.vertices = gpu.create_device_buffer(mesh.vertices.data(),
+                                              mesh.vertices.size() * sizeof(asset::MeshVertex),
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+    model.indices = gpu.create_device_buffer(mesh.indices.data(), mesh.indices.size() * sizeof(u32),
+                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
+    for (u64 i = 0; i < mesh.submeshes.size(); ++i) {
+        model.submeshes[i] = mesh.submeshes[i];
+        if (model.submeshes[i].texture == asset::NO_TEXTURE) {
+            model.submeshes[i].texture = fallback_texture;
+        }
+    }
+    model.submesh_count = static_cast<u32>(mesh.submeshes.size());
+
+    const u32 frames = gpu::Renderer::frames_in_flight();
+    void* mapped = nullptr;
+    model.records = gpu.create_mapped_buffer(
+        static_cast<u64>(frames) * MAX_MODEL_DRAWS * sizeof(DrawRecord), &mapped);
+    model.records_mapped = static_cast<DrawRecord*>(mapped);
+    model.commands = gpu.create_gpu_buffer(
+        static_cast<u64>(frames) * MAX_MODEL_DRAWS * sizeof(VkDrawIndexedIndirectCommand),
+        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+    model.counts = gpu.create_gpu_buffer(static_cast<u64>(frames) * sizeof(u32),
+                                         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    model.loaded = true;
+    return model;
+}
+
 void model_begin(RenderModel& model) { model.queued = 0; }
 
 namespace {
