@@ -194,7 +194,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         static_cast<f32>(frame.extent.width) / static_cast<f32>(frame.extent.height);
     const Mat4 proj = perspective(cur_fov_, aspect, 0.1f, 500.0f);
     const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch, cur_roll_);
-    const Mat4 view_proj = mat4_mul(proj, view);
+    const Mat4 view_proj = proj * view;
 
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
