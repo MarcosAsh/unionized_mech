@@ -1,18 +1,12 @@
-#define _POSIX_C_SOURCE 200809L
-
 #include "render/render.h"
 #include "render_math.h"
-#include "render_model.h"
 #include "render_props.h"
+#include "render_scene_state.h"
 #include "render_sun.h"
-
-#include "core/array.h"
-#include "core/log.h"
 
 #include <volk.h>
 
 #include <cmath>
-#include <sys/stat.h>
 
 namespace render {
 
@@ -24,7 +18,6 @@ struct PushConstants {
     u32 globals;
     u32 gslot;
 };
-
 
 // A global execution and memory barrier between the cull pre-pass stages.
 void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
@@ -42,150 +35,7 @@ void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAcce
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
-i64 file_mtime(const char* path) {
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        return 0;
-    }
-    return static_cast<i64>(st.st_mtim.tv_sec) * 1000000000 + static_cast<i64>(st.st_mtim.tv_nsec);
-}
-
 }  // namespace
-
-/// The imported models, held in the permanent arena so the public header can
-/// keep them behind a forward declaration.
-struct SceneModels {
-    RenderModel duck;
-    RenderModel viewmodel;
-    RenderModel trooper;
-    RenderModel tracer;
-    RenderModel hitmarker;
-    RenderModel overlay;
-    gpu::Blas level_blas;
-    gpu::Blas trooper_blas;
-    gpu::Blas duck_blas;
-    gpu::Buffer globals;
-    SceneGlobals* globals_mapped = nullptr;
-    u32 white_texture = 0;
-};
-
-
-
-Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch) {
-    core::Array<LevelVertex> verts = scratch.make_array<LevelVertex>(65536);
-    core::Array<u32> indices = scratch.make_array<u32>(131072);
-    build_level(verts, indices);
-
-    Scene scene;
-    scene.device_ = gpu.device_handle();
-    scene.gpu_ = &gpu;
-    scene.bindless_set_ = gpu.bindless_set();
-    scene.shadow_image_ = gpu.shadow_image();
-    scene.shadow_view_ = gpu.shadow_view();
-    scene.shadow_tex_ = gpu.shadow_bindless();
-    scene.bindless_layout_ = gpu.bindless_layout();
-    scene.color_format_ = gpu.color_format();
-    scene.depth_format_ = gpu.depth_format();
-    scene.index_count_ = static_cast<u32>(indices.size());
-
-    // Level buffers are sized to array capacity so a map reload can re-upload
-    // in place, whatever geometry the new map brings.
-    scene.vertices_ = gpu.create_device_buffer(verts.as_span().data(),
-                                               verts.capacity() * sizeof(LevelVertex),
-                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-    scene.indices_ = gpu.create_device_buffer(indices.as_span().data(),
-                                              indices.capacity() * sizeof(u32),
-                                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
-
-    VkDrawIndexedIndirectCommand draw{};
-    draw.indexCount = scene.index_count_;
-    draw.instanceCount = 1;
-    scene.indirect_ = gpu.create_device_buffer(&draw, sizeof(draw),
-                                               VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false);
-
-    // Imported models. Missing files degrade to boxes-only, so the app still
-    // runs from a build without the sample downloads.
-    scene.models_ = permanent.alloc_one<SceneModels>();
-    *scene.models_ = SceneModels{};
-    const u8 white[4] = {255, 255, 255, 255};
-    scene.models_->white_texture = gpu.create_texture(white, 1, 1).bindless_index;
-    scene.models_->duck =
-        model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
-    scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
-    scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
-    scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
-    scene.models_->hitmarker = make_hitmarker(gpu, scene.models_->white_texture);
-    scene.models_->overlay = make_overlay_quad(gpu, scene.models_->white_texture);
-
-    // On ray tracing hardware, every caster gets a BLAS and the sun shadows
-    // trace against the scene instead of sampling the shadow map.
-    scene.rt_ = gpu.rt_available();
-    if (scene.rt_) {
-        scene.models_->level_blas =
-            gpu.create_blas(scene.vertices_.handle, static_cast<u32>(verts.size()),
-                            sizeof(LevelVertex), scene.indices_.handle,
-                            static_cast<u32>(indices.size()));
-        if (scene.models_->duck.loaded) {
-            scene.models_->duck_blas = gpu.create_blas(
-                scene.models_->duck.vertices.handle, scene.models_->duck.total_vertices,
-                sizeof(asset::MeshVertex), scene.models_->duck.indices.handle,
-                scene.models_->duck.total_indices);
-        }
-        scene.models_->trooper_blas = gpu.create_blas(
-            scene.models_->trooper.vertices.handle, scene.models_->trooper.total_vertices,
-            sizeof(asset::MeshVertex), scene.models_->trooper.indices.handle,
-            scene.models_->trooper.total_indices);
-        gpu.create_tlas(16);
-        core::log_info("render: ray traced sun shadows active");
-    }
-    void* globals_mapped = nullptr;
-    scene.models_->globals = gpu.create_mapped_buffer(
-        gpu::Renderer::frames_in_flight() * sizeof(SceneGlobals), &globals_mapped);
-    scene.models_->globals_mapped = static_cast<SceneGlobals*>(globals_mapped);
-
-    scene.build_pipelines();
-    scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
-                        file_mtime(SHADER_DIR "/mesh.vert.spv");
-    scene.frag_mtime_ = file_mtime(SHADER_DIR "/scene.frag.spv") +
-                        file_mtime(SHADER_DIR "/mesh.frag.spv");
-    return scene;
-}
-
-void Scene::reload_level(gpu::Renderer& gpu, core::Arena& scratch) {
-    const u64 marker = scratch.marker();
-    core::Array<LevelVertex> verts = scratch.make_array<LevelVertex>(65536);
-    core::Array<u32> indices = scratch.make_array<u32>(131072);
-    build_level(verts, indices);
-
-    gpu.update_device_buffer(vertices_, verts.as_span().data(),
-                             verts.size() * sizeof(LevelVertex));
-    gpu.update_device_buffer(indices_, indices.as_span().data(), indices.size() * sizeof(u32));
-    index_count_ = static_cast<u32>(indices.size());
-    VkDrawIndexedIndirectCommand draw{};
-    draw.indexCount = index_count_;
-    draw.instanceCount = 1;
-    gpu.update_device_buffer(indirect_, &draw, sizeof(draw));
-    scratch.rewind(marker);
-    core::log_info("level reloaded");
-}
-
-void Scene::maybe_reload() {
-    const i64 vert = file_mtime(SHADER_DIR "/scene.vert.spv") +
-                     file_mtime(SHADER_DIR "/mesh.vert.spv") +
-                     file_mtime(SHADER_DIR "/shadow_level.vert.spv") +
-                     file_mtime(SHADER_DIR "/shadow_mesh.vert.spv");
-    const i64 frag = file_mtime(SHADER_DIR "/scene.frag.spv") +
-                     file_mtime(SHADER_DIR "/mesh.frag.spv");
-    if (vert == vert_mtime_ && frag == frag_mtime_) {
-        return;
-    }
-    vkDeviceWaitIdle(device_);  // reload is an event, not the steady frame path
-    destroy_pipelines();
-    build_pipelines();
-    vert_mtime_ = vert;
-    frag_mtime_ = frag;
-    core::log_info("shaders reloaded");
-}
 
 void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr,
                  f32 alpha) {
@@ -560,44 +410,4 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
 
     vkCmdEndRendering(frame.cmd);
 }
-
-Scene::~Scene() {
-    if (device_ == VK_NULL_HANDLE) {
-        return;
-    }
-    vkDeviceWaitIdle(device_);  // shutdown: the pipelines may still be in flight
-    destroy_pipelines();
-}
-
-Scene::Scene(Scene&& other) noexcept { *this = static_cast<Scene&&>(other); }
-
-Scene& Scene::operator=(Scene&& other) noexcept {
-    if (this != &other) {
-        device_ = other.device_;
-        pipeline_ = other.pipeline_;
-        layout_ = other.layout_;
-        mesh_pipeline_ = other.mesh_pipeline_;
-        mesh_layout_ = other.mesh_layout_;
-        bindless_set_ = other.bindless_set_;
-        bindless_layout_ = other.bindless_layout_;
-        color_format_ = other.color_format_;
-        depth_format_ = other.depth_format_;
-        vertices_ = other.vertices_;
-        indices_ = other.indices_;
-        indirect_ = other.indirect_;
-        index_count_ = other.index_count_;
-        models_ = other.models_;
-        vert_mtime_ = other.vert_mtime_;
-        frag_mtime_ = other.frag_mtime_;
-        cur_roll_ = other.cur_roll_;
-        cur_fov_ = other.cur_fov_;
-        other.device_ = VK_NULL_HANDLE;
-        other.pipeline_ = VK_NULL_HANDLE;
-        other.layout_ = VK_NULL_HANDLE;
-        other.mesh_pipeline_ = VK_NULL_HANDLE;
-        other.mesh_layout_ = VK_NULL_HANDLE;
-    }
-    return *this;
-}
-
 }  // namespace render
