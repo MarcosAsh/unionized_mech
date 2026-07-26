@@ -23,7 +23,7 @@ bool has_required_features(VkPhysicalDevice pd) {
     f2.pNext = &f12;
     vkGetPhysicalDeviceFeatures2(pd, &f2);
 
-    return f13.dynamicRendering && f13.synchronization2 && f12.timelineSemaphore &&
+    return f13.dynamicRendering && f13.synchronization2 && f13.shaderDemoteToHelperInvocation && f12.timelineSemaphore &&
            f12.bufferDeviceAddress && f12.descriptorIndexing && f12.runtimeDescriptorArray &&
            f12.descriptorBindingPartiallyBound &&
            f12.descriptorBindingSampledImageUpdateAfterBind &&
@@ -166,6 +166,8 @@ DeviceResult Device::create(const Instance& instance) {
     e13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     e13.dynamicRendering = VK_TRUE;
     e13.synchronization2 = VK_TRUE;
+    // Fragment discard compiles to demote-to-helper under SPIR-V 1.6.
+    e13.shaderDemoteToHelperInvocation = VK_TRUE;
 
     VkPhysicalDeviceVulkan12Features e12{};
     e12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;

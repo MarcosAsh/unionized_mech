@@ -7,14 +7,18 @@
 
 namespace render {
 
-/// The M0 scene pass. Owns a graphics pipeline and the scene geometry, which
-/// lives in a bindless storage buffer drawn with an indexed indirect call. It
+struct SceneModels;
+
+/// The scene pass. Owns the level geometry pipeline, a textured mesh pipeline,
+/// and the imported models, all drawn bindless through indirect calls. It
 /// reads camera state from the caller and never mutates the world.
 class Scene {
 public:
-    /// Build the pipeline and upload the scene. `scratch` is used only during
-    /// construction to assemble geometry and may be reset afterwards.
-    [[nodiscard]] static Scene create(gpu::Renderer& gpu, core::Arena& scratch);
+    /// Build the pipelines and upload the scene. Imported model bookkeeping
+    /// lives in `permanent`; `scratch` is used only during construction and may
+    /// be reset afterwards.
+    [[nodiscard]] static Scene create(gpu::Renderer& gpu, core::Arena& permanent,
+                                      core::Arena& scratch);
 
     ~Scene();
     Scene(Scene&& other) noexcept;
@@ -54,11 +58,7 @@ private:
     gpu::Buffer indirect_{};
     u32 index_count_ = 0;
 
-    gpu::Buffer duck_vertices_{};
-    gpu::Buffer duck_indices_{};
-    gpu::Buffer duck_indirect_{};
-    gpu::Texture duck_texture_{};
-    bool has_duck_ = false;
+    SceneModels* models_ = nullptr;  ///< Imported models, in the permanent arena.
     i64 vert_mtime_ = 0;
     i64 frag_mtime_ = 0;
     f32 cur_roll_ = 0.0f;    ///< Eased camera roll, cosmetic state only.

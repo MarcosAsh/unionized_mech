@@ -105,9 +105,12 @@ struct Aabb {
 };
 
 /// The static collision boxes for the level. The floor plane at y = 0 is
-/// implicit. Both the simulation and the renderer read these, so what you see is
-/// exactly what you collide with.
+/// implicit. The renderer draws the visible prefix of this list; the remainder
+/// are invisible volumes standing in for imported scenery, rough on purpose.
 [[nodiscard]] core::Span<const Aabb> level_boxes();
+
+/// The prefix of level_boxes drawn as visible geometry.
+[[nodiscard]] core::Span<const Aabb> visible_boxes();
 
 /// Advance the world by one tick. Pure: it reads `prev` and `cmd` and writes
 /// `next`, with no globals and no wall-clock. The same inputs always yield the

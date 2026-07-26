@@ -17,7 +17,8 @@ layout(std430, set = 0, binding = 0) readonly buffer Verts {
 
 layout(push_constant) uniform Push {
     mat4 mvp;
-    vec4 rot;  // model rotation quaternion (x, y, z, w)
+    vec4 rot;    // model rotation quaternion (x, y, z, w)
+    vec4 color;  // base color factor
     uint vbuf;
     uint tex;
 } pc;

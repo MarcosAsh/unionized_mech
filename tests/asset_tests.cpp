@@ -22,9 +22,19 @@ static void test_mesh_round_trip() {
     }
     const u32 indices[3] = {0, 1, 2};
 
+    Submesh submeshes[2] = {};
+    submeshes[0].index_offset = 0;
+    submeshes[0].index_count = 3;
+    submeshes[0].texture = 0;
+    submeshes[0].color[0] = 0.5f;
+    submeshes[1].index_offset = 3;
+    submeshes[1].index_count = 0;
+    submeshes[1].texture = NO_TEXTURE;
+
     MeshData mesh;
     mesh.vertices = core::Span<const MeshVertex>(verts, 3);
     mesh.indices = core::Span<const u32>(indices, 3);
+    mesh.submeshes = core::Span<const Submesh>(submeshes, 2);
 
     const char* path = "asset_tests_mesh.tmp";
     ASSERT(mesh_save(path, mesh).is_ok());
@@ -34,6 +44,7 @@ static void test_mesh_round_trip() {
 
     ASSERT(back.vertices.size() == 3);
     ASSERT(back.indices.size() == 3);
+    ASSERT(back.submeshes.size() == 2);
     for (u32 i = 0; i < 3; ++i) {
         ASSERT(back.vertices[i].pos == verts[i].pos);
         ASSERT(back.vertices[i].normal == verts[i].normal);
@@ -41,6 +52,10 @@ static void test_mesh_round_trip() {
         ASSERT(back.vertices[i].v == verts[i].v);
         ASSERT(back.indices[i] == indices[i]);
     }
+    ASSERT(back.submeshes[0].index_count == 3);
+    ASSERT(back.submeshes[0].texture == 0);
+    ASSERT(back.submeshes[0].color[0] == 0.5f);
+    ASSERT(back.submeshes[1].texture == NO_TEXTURE);
 }
 
 static void test_texture_round_trip() {

@@ -1,4 +1,5 @@
 #include "render/render.h"
+#include "render_model.h"
 
 #include "core/assert.h"
 
@@ -145,8 +146,8 @@ void Scene::build_pipelines() {
                    SHADER_DIR "/scene.vert.spv", SHADER_DIR "/scene.frag.spv",
                    sizeof(f32) * 16 + sizeof(u32), &pipeline_, &layout_);
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
-                   SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/mesh.frag.spv",
-                   sizeof(f32) * 20 + sizeof(u32) * 2, &mesh_pipeline_, &mesh_layout_);
+                   SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/mesh.frag.spv", sizeof(MeshPush),
+                   &mesh_pipeline_, &mesh_layout_);
 }
 
 void Scene::destroy_pipelines() {

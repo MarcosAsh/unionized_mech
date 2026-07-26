@@ -2,12 +2,10 @@
 
 #include "render/render.h"
 #include "render_math.h"
+#include "render_model.h"
 
-#include "asset/asset.h"
 #include "core/array.h"
 #include "core/log.h"
-#include "core/mat.h"
-#include "core/quat.h"
 
 #include <volk.h>
 
@@ -28,13 +26,6 @@ struct PushConstants {
     u32 vbuf;
 };
 
-struct MeshPush {
-    f32 mvp[16];
-    f32 rot[4];  // model rotation quaternion
-    u32 vbuf;
-    u32 tex;
-};
-
 struct DuckSpot {
     core::Vec3 pos;
     f32 yaw;
@@ -47,6 +38,10 @@ constexpr DuckSpot DUCKS[3] = {
     {{-6.0f, 2.0f, 6.0f}, 2.4f, 1.0f},
     {{2.0f, 0.0f, -9.0f}, -1.2f, 2.5f},
 };
+
+// The Sponza atrium, placed south of the plaza. Collision boxes matching its
+// main walls live in sim's level so it is walkable and wallrunnable.
+constexpr core::Vec3 SPONZA_POS{0.0f, 0.0f, -90.0f};
 
 i64 file_mtime(const char* path) {
     struct stat st;
@@ -114,7 +109,7 @@ void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
 
     const f32 palette[6][3] = {{0.85f, 0.3f, 0.3f}, {0.3f, 0.75f, 0.4f}, {0.35f, 0.5f, 0.9f},
                                {0.9f, 0.75f, 0.3f}, {0.7f, 0.4f, 0.85f}, {0.3f, 0.8f, 0.8f}};
-    const core::Span<const sim::Aabb> boxes = sim::level_boxes();
+    const core::Span<const sim::Aabb> boxes = sim::visible_boxes();
     for (u64 c = 0; c < boxes.size(); ++c) {
         const sim::Aabb& b = boxes[c];
         const f32* col = palette[c % 6];
@@ -125,7 +120,15 @@ void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
 
 }  // namespace
 
-Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
+/// The imported models, held in the permanent arena so the public header can
+/// keep them behind a forward declaration.
+struct SceneModels {
+    RenderModel duck;
+    RenderModel sponza;
+    u32 white_texture = 0;
+};
+
+Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch) {
     core::Array<Vertex> verts = scratch.make_array<Vertex>(16384);
     core::Array<u32> indices = scratch.make_array<u32>(32768);
     build_scene(verts, indices);
@@ -149,35 +152,16 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
     scene.indirect_ = gpu.create_device_buffer(&draw, sizeof(draw),
                                                VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false);
 
-    // The imported sample model. Missing assets degrade to boxes-only, so the
-    // app still runs from a build without the sample download.
-    core::Result<asset::MeshData, const char*> duck_mesh =
-        asset::mesh_load(scratch, ASSET_DIR "/duck.umesh");
-    core::Result<asset::TextureData, const char*> duck_tex =
-        asset::texture_load(scratch, ASSET_DIR "/duck.utex");
-    if (duck_mesh.is_ok() && duck_tex.is_ok()) {
-        const asset::MeshData& mesh = duck_mesh.value();
-        const asset::TextureData& tex = duck_tex.value();
-        scene.duck_vertices_ = gpu.create_device_buffer(
-            mesh.vertices.data(), mesh.vertices.size() * sizeof(asset::MeshVertex),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-        scene.duck_indices_ =
-            gpu.create_device_buffer(mesh.indices.data(), mesh.indices.size() * sizeof(u32),
-                                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
-        VkDrawIndexedIndirectCommand duck_draw{};
-        duck_draw.indexCount = static_cast<u32>(mesh.indices.size());
-        duck_draw.instanceCount = 1;
-        scene.duck_indirect_ = gpu.create_device_buffer(&duck_draw, sizeof(duck_draw),
-                                                        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false);
-        scene.duck_texture_ = gpu.create_texture(tex.rgba.data(), tex.width, tex.height);
-        scene.has_duck_ = true;
-        core::log_infof("scene: duck loaded, %llu vertices, %ux%u texture, %u mips",
-                        static_cast<unsigned long long>(mesh.vertices.size()), tex.width,
-                        tex.height, scene.duck_texture_.mip_count);
-    } else {
-        core::log_infof("scene: no sample model (%s), boxes only",
-                        duck_mesh.is_err() ? duck_mesh.error() : duck_tex.error());
-    }
+    // Imported models. Missing files degrade to boxes-only, so the app still
+    // runs from a build without the sample downloads.
+    scene.models_ = permanent.alloc_one<SceneModels>();
+    *scene.models_ = SceneModels{};
+    const u8 white[4] = {255, 255, 255, 255};
+    scene.models_->white_texture = gpu.create_texture(white, 1, 1).bindless_index;
+    scene.models_->duck =
+        model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
+    scene.models_->sponza =
+        model_load(gpu, scratch, ASSET_DIR "/sponza", scene.models_->white_texture);
 
     scene.build_pipelines();
     scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
@@ -303,38 +287,18 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     vkCmdDrawIndexedIndirect(frame.cmd, indirect_.handle, 0, 1,
                              sizeof(VkDrawIndexedIndirectCommand));
 
-    // The textured mesh pass: the imported sample model at a few plaza spots.
-    if (has_duck_) {
-        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_);
-        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_layout_, 0, 1,
-                                &bindless_set_, 0, nullptr);
-        vkCmdBindIndexBuffer(frame.cmd, duck_indices_.handle, 0, VK_INDEX_TYPE_UINT32);
-        for (const DuckSpot& spot : DUCKS) {
-            const f32 half = spot.yaw * 0.5f;
-            const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
-                                                              std::sin(half), std::cos(half));
-            core::Mat4 model = core::Mat4::trs(spot.pos, rot);
-            model = model * core::Mat4::scale(
-                                core::Vec3{spot.scale, spot.scale, spot.scale});
-            const core::Mat4 mvp = view_proj * model;
-
-            MeshPush mp{};
-            for (u32 i = 0; i < 16; ++i) {
-                mp.mvp[i] = mvp.m[i];
-            }
-            mp.rot[0] = rot.x;
-            mp.rot[1] = rot.y;
-            mp.rot[2] = rot.z;
-            mp.rot[3] = rot.w;
-            mp.vbuf = duck_vertices_.bindless_index;
-            mp.tex = duck_texture_.bindless_index;
-            vkCmdPushConstants(frame.cmd, mesh_layout_,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                               sizeof(MeshPush), &mp);
-            vkCmdDrawIndexedIndirect(frame.cmd, duck_indirect_.handle, 0, 1,
-                                     sizeof(VkDrawIndexedIndirectCommand));
-        }
+    // The textured mesh pass: imported models.
+    vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_);
+    vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_layout_, 0, 1,
+                            &bindless_set_, 0, nullptr);
+    for (const DuckSpot& spot : DUCKS) {
+        const f32 half = spot.yaw * 0.5f;
+        const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
+                                                          std::sin(half), std::cos(half));
+        model_draw(models_->duck, frame.cmd, mesh_layout_, view_proj, spot.pos, rot, spot.scale);
     }
+    model_draw(models_->sponza, frame.cmd, mesh_layout_, view_proj, SPONZA_POS, core::Quat{},
+               1.0f);
 
     vkCmdEndRendering(frame.cmd);
 }
@@ -364,11 +328,7 @@ Scene& Scene::operator=(Scene&& other) noexcept {
         indices_ = other.indices_;
         indirect_ = other.indirect_;
         index_count_ = other.index_count_;
-        duck_vertices_ = other.duck_vertices_;
-        duck_indices_ = other.duck_indices_;
-        duck_indirect_ = other.duck_indirect_;
-        duck_texture_ = other.duck_texture_;
-        has_duck_ = other.has_duck_;
+        models_ = other.models_;
         vert_mtime_ = other.vert_mtime_;
         frag_mtime_ = other.frag_mtime_;
         cur_roll_ = other.cur_roll_;

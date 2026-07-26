@@ -8,12 +8,14 @@ namespace asset {
 
 namespace {
 
-// Native formats: a header then tightly packed payload. MeshVertex's layout is
-// static_asserted file-stable in asset.h, so raw bytes are the format.
+// Native formats: a header then tightly packed payload. MeshVertex and Submesh
+// layouts are static_asserted file-stable in asset.h, so raw bytes are the
+// format.
 struct MeshHeader {
     u32 magic;
     u32 vertex_count;
     u32 index_count;
+    u32 submesh_count;
 };
 
 struct TextureHeader {
@@ -22,7 +24,7 @@ struct TextureHeader {
     u32 height;
 };
 
-constexpr u32 MESH_MAGIC = 0x48534D55u;  // "UMSH" little-endian
+constexpr u32 MESH_MAGIC = 0x32534D55u;  // "UMS2" little-endian
 constexpr u32 TEX_MAGIC = 0x58544D55u;   // "UMTX" little-endian
 
 }  // namespace
@@ -30,9 +32,10 @@ constexpr u32 TEX_MAGIC = 0x58544D55u;   // "UMTX" little-endian
 core::Result<core::Unit, const char*> mesh_save(const char* path, const MeshData& mesh) {
     using SaveResult = core::Result<core::Unit, const char*>;
 
+    const u64 submesh_bytes = mesh.submeshes.size() * sizeof(Submesh);
     const u64 verts_bytes = mesh.vertices.size() * sizeof(MeshVertex);
     const u64 index_bytes = mesh.indices.size() * sizeof(u32);
-    const u64 total = sizeof(MeshHeader) + verts_bytes + index_bytes;
+    const u64 total = sizeof(MeshHeader) + submesh_bytes + verts_bytes + index_bytes;
 
     core::Arena scratch = core::Arena::with_capacity(total + 64);
     const core::Span<u8> bytes = scratch.alloc_n<u8>(total);
@@ -41,9 +44,15 @@ core::Result<core::Unit, const char*> mesh_save(const char* path, const MeshData
     header.magic = MESH_MAGIC;
     header.vertex_count = static_cast<u32>(mesh.vertices.size());
     header.index_count = static_cast<u32>(mesh.indices.size());
-    std::memcpy(bytes.data(), &header, sizeof(header));
-    std::memcpy(bytes.data() + sizeof(header), mesh.vertices.data(), verts_bytes);
-    std::memcpy(bytes.data() + sizeof(header) + verts_bytes, mesh.indices.data(), index_bytes);
+    header.submesh_count = static_cast<u32>(mesh.submeshes.size());
+    u8* cursor = bytes.data();
+    std::memcpy(cursor, &header, sizeof(header));
+    cursor += sizeof(header);
+    std::memcpy(cursor, mesh.submeshes.data(), submesh_bytes);
+    cursor += submesh_bytes;
+    std::memcpy(cursor, mesh.vertices.data(), verts_bytes);
+    cursor += verts_bytes;
+    std::memcpy(cursor, mesh.indices.data(), index_bytes);
 
     core::Result<core::Unit, const char*> written =
         core::write_entire_file(path, core::Span<const u8>(bytes.data(), bytes.size()));
@@ -69,21 +78,28 @@ core::Result<MeshData, const char*> mesh_load(core::Arena& arena, const char* pa
     if (header.magic != MESH_MAGIC) {
         return LoadResult::err("not a native mesh");
     }
+    const u64 submesh_bytes = static_cast<u64>(header.submesh_count) * sizeof(Submesh);
     const u64 verts_bytes = static_cast<u64>(header.vertex_count) * sizeof(MeshVertex);
     const u64 index_bytes = static_cast<u64>(header.index_count) * sizeof(u32);
-    if (bytes.size() != sizeof(MeshHeader) + verts_bytes + index_bytes) {
+    if (bytes.size() != sizeof(MeshHeader) + submesh_bytes + verts_bytes + index_bytes) {
         return LoadResult::err("mesh length does not match header");
     }
 
     // Copied into aligned storage rather than aliased into the file bytes.
+    const core::Span<Submesh> submeshes = arena.alloc_n<Submesh>(header.submesh_count);
     const core::Span<MeshVertex> verts = arena.alloc_n<MeshVertex>(header.vertex_count);
     const core::Span<u32> indices = arena.alloc_n<u32>(header.index_count);
-    std::memcpy(verts.data(), bytes.data() + sizeof(header), verts_bytes);
-    std::memcpy(indices.data(), bytes.data() + sizeof(header) + verts_bytes, index_bytes);
+    const u8* cursor = bytes.data() + sizeof(header);
+    std::memcpy(submeshes.data(), cursor, submesh_bytes);
+    cursor += submesh_bytes;
+    std::memcpy(verts.data(), cursor, verts_bytes);
+    cursor += verts_bytes;
+    std::memcpy(indices.data(), cursor, index_bytes);
 
     MeshData out;
     out.vertices = core::Span<const MeshVertex>(verts.data(), verts.size());
     out.indices = core::Span<const u32>(indices.data(), indices.size());
+    out.submeshes = core::Span<const Submesh>(submeshes.data(), submeshes.size());
     return LoadResult::ok(out);
 }
 

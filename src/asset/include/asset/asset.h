@@ -19,10 +19,25 @@ struct MeshVertex {
 
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex layout must stay file-stable");
 
-/// Triangle mesh data in engine layout, indices into the vertex span.
+/// A contiguous index range drawn with one material. `texture` indexes the
+/// model's texture list, or NO_TEXTURE when the material is untextured.
+struct Submesh {
+    u32 index_offset = 0;
+    u32 index_count = 0;
+    u32 texture = 0xFFFFFFFFu;
+    f32 color[4] = {1.0f, 1.0f, 1.0f, 1.0f};  ///< Base color factor.
+};
+
+constexpr u32 NO_TEXTURE = 0xFFFFFFFFu;
+
+static_assert(sizeof(Submesh) == 28, "Submesh layout must stay file-stable");
+
+/// Triangle mesh data in engine layout: one vertex and index pool, drawn as
+/// per-material submesh ranges.
 struct MeshData {
     core::Span<const MeshVertex> vertices;
     core::Span<const u32> indices;
+    core::Span<const Submesh> submeshes;
 };
 
 /// An RGBA8 image, tightly packed rows.
@@ -32,17 +47,17 @@ struct TextureData {
     core::Span<const u8> rgba;
 };
 
-/// A model imported from glTF: one merged mesh and, when the source has one, a
-/// base color texture.
+/// A model imported from glTF: one merged mesh in per-material submeshes, and
+/// the base color textures those submeshes reference.
 struct Model {
     MeshData mesh;
-    TextureData base_color;
-    bool has_texture = false;
+    core::Span<const TextureData> textures;
 };
 
 /// Import a .gltf or .glb file. All primitives of the default scene are merged
-/// into one mesh with node transforms applied. The first base color texture
-/// found becomes the model's texture. Storage comes from `arena`.
+/// into one vertex and index pool with node transforms applied, grouped into
+/// one submesh per material. Base color textures load from buffer views or
+/// from URIs beside the file. Storage comes from `arena`.
 /// # Errors
 /// A static message naming the failing stage.
 [[nodiscard]] core::Result<Model, const char*> import_gltf(core::Arena& arena, const char* path);

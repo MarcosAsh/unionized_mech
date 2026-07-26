@@ -43,7 +43,9 @@ int main(int argc, char** argv) {
 
     core::Arena permanent = core::Arena::with_capacity(64ull << 20);
     core::Arena frame = core::Arena::with_capacity(16ull << 20);
-    core::Arena scratch = core::Arena::with_capacity(16ull << 20);
+    // Scratch peaks during model loading, when file bytes and decoded pixels
+    // coexist briefly. Reset after startup and per use.
+    core::Arena scratch = core::Arena::with_capacity(256ull << 20);
 
     core::Result<platform::Window, const char*> win_result =
         platform::Window::open("unionized_mech", 1280, 720, interactive);
@@ -83,7 +85,7 @@ int main(int argc, char** argv) {
     }
     gpu::Renderer renderer = static_cast<gpu::Renderer&&>(rend_result.value());
 
-    render::Scene scene = render::Scene::create(renderer, scratch);
+    render::Scene scene = render::Scene::create(renderer, permanent, scratch);
     scratch.reset();
     core::log_infof("window %ux%u. WASD moves, mouse looks, Escape quits.", win.width(),
                     win.height());

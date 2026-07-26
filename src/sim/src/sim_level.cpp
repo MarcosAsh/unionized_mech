@@ -71,12 +71,25 @@ const Aabb LEVEL[] = {
     {-40.0f, 0.0f, 30.0f, -30.0f, 10.0f, 40.0f},
     // Practice wall, west. One long clean face for learning the wallrun.
     {-55.0f, 0.0f, -10.0f, -53.0f, 7.0f, 20.0f},
+
+    // Everything below is collision-only, standing in for imported scenery.
+    // The Sponza atrium sits at (0, 0, -90); these four volumes are its outer
+    // walls so the interior is walkable and wallrunnable. Columns and railings
+    // deliberately have no collision yet.
+    {-15.4f, 0.0f, -83.8f, 14.4f, 12.0f, -81.2f},
+    {-15.4f, 0.0f, -99.5f, 14.4f, 12.0f, -96.2f},
+    {-15.4f, 0.0f, -99.5f, -13.0f, 12.0f, -81.2f},
+    {13.0f, 0.0f, -99.5f, 14.4f, 12.0f, -81.2f},
 };
+
+constexpr u64 VISIBLE_COUNT = sizeof(LEVEL) / sizeof(LEVEL[0]) - 4;
 
 }  // namespace
 
 core::Span<const Aabb> level_boxes() {
     return core::Span<const Aabb>(LEVEL, sizeof(LEVEL) / sizeof(LEVEL[0]));
 }
+
+core::Span<const Aabb> visible_boxes() { return core::Span<const Aabb>(LEVEL, VISIBLE_COUNT); }
 
 }  // namespace sim
