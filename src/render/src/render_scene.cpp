@@ -60,6 +60,10 @@ struct SceneModels {
     SkinnedModel fox;
     RenderModel viewmodel;
     FoxCompanion fox_state;
+    gpu::Blas level_blas;
+    gpu::Blas duck_blas;
+    gpu::Blas sponza_blas;
+    gpu::Blas fox_blas;
     gpu::Buffer globals;
     SceneGlobals* globals_mapped = nullptr;
     f32 last_anim_time = 0.0f;
@@ -75,6 +79,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
 
     Scene scene;
     scene.device_ = gpu.device_handle();
+    scene.gpu_ = &gpu;
     scene.bindless_set_ = gpu.bindless_set();
     scene.shadow_image_ = gpu.shadow_image();
     scene.shadow_view_ = gpu.shadow_view();
@@ -112,6 +117,38 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
                                             scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
+
+    // On ray tracing hardware, every caster gets a BLAS and the sun shadows
+    // trace against the scene instead of sampling the shadow map. The fox BLAS
+    // builds from bind-pose vertices here and rebuilds per frame from the
+    // skinned slice.
+    scene.rt_ = gpu.rt_available();
+    if (scene.rt_) {
+        scene.models_->level_blas =
+            gpu.create_blas(scene.vertices_.handle, static_cast<u32>(verts.size()),
+                            sizeof(LevelVertex), scene.indices_.handle,
+                            static_cast<u32>(indices.size()));
+        if (scene.models_->duck.loaded) {
+            scene.models_->duck_blas = gpu.create_blas(
+                scene.models_->duck.vertices.handle, scene.models_->duck.total_vertices,
+                sizeof(asset::MeshVertex), scene.models_->duck.indices.handle,
+                scene.models_->duck.total_indices);
+        }
+        if (scene.models_->sponza.loaded) {
+            scene.models_->sponza_blas = gpu.create_blas(
+                scene.models_->sponza.vertices.handle, scene.models_->sponza.total_vertices,
+                sizeof(asset::MeshVertex), scene.models_->sponza.indices.handle,
+                scene.models_->sponza.total_indices);
+        }
+        if (scene.models_->fox.base.loaded && scene.models_->fox.vertex_count > 0) {
+            scene.models_->fox_blas = gpu.create_blas(
+                scene.models_->fox.base.vertices.handle, scene.models_->fox.vertex_count,
+                sizeof(asset::MeshVertex), scene.models_->fox.base.indices.handle,
+                scene.models_->fox.base.total_indices);
+        }
+        gpu.create_tlas(16);
+        core::log_info("render: ray traced sun shadows active");
+    }
     void* globals_mapped = nullptr;
     scene.models_->globals = gpu.create_mapped_buffer(
         gpu::Renderer::frames_in_flight() * sizeof(SceneGlobals), &globals_mapped);
@@ -326,6 +363,42 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
                    VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
 
+    if (rt_) {
+        // Ray traced sun: rebuild the fox BLAS from this frame's skinned
+        // vertices and the TLAS from the live instance transforms.
+        VkAccelerationStructureInstanceKHR instances[8];
+        u32 instance_count = 0;
+        instances[instance_count++] = make_rt_instance(Mat4{}, models_->level_blas.address);
+        if (models_->duck_blas.handle != VK_NULL_HANDLE) {
+            for (const DuckSpot& spot : DUCKS) {
+                const f32 half = spot.yaw * 0.5f;
+                const core::Quat rot = core::Quat::from_axis_half(
+                    core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(half), std::cos(half));
+                core::Mat4 world = core::Mat4::trs(spot.pos, rot);
+                world = world * core::Mat4::scale(
+                                    core::Vec3{spot.scale, spot.scale, spot.scale});
+                instances[instance_count++] =
+                    make_rt_instance(world, models_->duck_blas.address);
+            }
+        }
+        if (models_->sponza_blas.handle != VK_NULL_HANDLE) {
+            instances[instance_count++] = make_rt_instance(
+                core::Mat4::translation(SPONZA_POS), models_->sponza_blas.address);
+        }
+        if (models_->fox_blas.handle != VK_NULL_HANDLE) {
+            core::Mat4 fox_world = core::Mat4::trs(fox_pos, fox_rot);
+            fox_world = fox_world * core::Mat4::scale(core::Vec3{0.02f, 0.02f, 0.02f});
+            instances[instance_count++] =
+                make_rt_instance(fox_world, models_->fox_blas.address);
+        }
+        record_rt_sun(*gpu_, frame.cmd, models_->fox_blas,
+                      models_->fox.skinned_verts.handle,
+                      static_cast<u64>(frame.slot) * models_->fox.vertex_count *
+                          sizeof(asset::MeshVertex),
+                      core::Span<const VkAccelerationStructureInstanceKHR>(instances,
+                                                                           instance_count),
+                      frame.slot);
+    } else {
     SunShadowInputs sun_in;
     sun_in.cmd = frame.cmd;
     sun_in.image = shadow_image_;
@@ -345,6 +418,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     sun_in.sun_view_proj = sun_view_proj;
     sun_in.slot = frame.slot;
     record_sun_shadow(sun_in);
+    }
 
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

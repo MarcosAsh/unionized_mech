@@ -21,7 +21,7 @@ RendererResult Renderer::create(const Device& device, VkSurfaceKHR surface, u32 
     Renderer r;
     r.device_ = &device;
     r.surface_ = surface;
-    r.allocator_.init(device.physical(), device.handle());
+    r.allocator_.init(device.physical(), device.handle(), device.supports_ray_tracing());
     r.init_bindless();
     r.create_shadow_map();
 
@@ -176,6 +176,9 @@ Renderer::~Renderer() {
     const VkDevice dev = device_->handle();
     vkDeviceWaitIdle(dev);  // shutdown, not the frame loop
 
+    for (u32 i = 0; i < owned_as_count_; ++i) {
+        vkDestroyAccelerationStructureKHR(dev, owned_as_[i], nullptr);
+    }
     for (u32 i = 0; i < owned_count_; ++i) {
         vkDestroyBuffer(dev, owned_buffers_[i], nullptr);
     }
@@ -253,6 +256,18 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
     next_storage_index_ = other.next_storage_index_;
     next_sampled_index_ = other.next_sampled_index_;
     owned_texture_count_ = other.owned_texture_count_;
+    owned_as_count_ = other.owned_as_count_;
+    for (u32 i = 0; i < MAX_OWNED_AS; ++i) {
+        owned_as_[i] = other.owned_as_[i];
+    }
+    for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+        tlas_[i] = other.tlas_[i];
+        tlas_scratch_address_[i] = other.tlas_scratch_address_[i];
+    }
+    tlas_instance_buffer_ = other.tlas_instance_buffer_;
+    tlas_instance_address_ = other.tlas_instance_address_;
+    tlas_instances_mapped_ = other.tlas_instances_mapped_;
+    tlas_max_instances_ = other.tlas_max_instances_;
     for (u32 i = 0; i < MAX_OWNED_TEXTURES; ++i) {
         owned_images_[i] = other.owned_images_[i];
         owned_views_[i] = other.owned_views_[i];

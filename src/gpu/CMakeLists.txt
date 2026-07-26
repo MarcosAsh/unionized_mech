@@ -7,6 +7,7 @@ add_library(gpu STATIC
     src/gpu_swapchain.cpp
     src/gpu_alloc.cpp
     src/gpu_resources.cpp
+    src/gpu_rt.cpp
     src/gpu_frame.cpp
     src/gpu_renderer.cpp)
 

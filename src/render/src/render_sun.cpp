@@ -6,6 +6,22 @@ namespace render {
 
 namespace {
 
+// A global memory barrier for the acceleration structure build chain.
+void rt_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+                VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access) {
+    VkMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = src_stage;
+    barrier.srcAccessMask = src_access;
+    barrier.dstStageMask = dst_stage;
+    barrier.dstAccessMask = dst_access;
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.memoryBarrierCount = 1;
+    dep.pMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(cmd, &dep);
+}
+
 struct ShadowLevelPush {
     f32 sun_view_proj[16];
     u32 vbuf;
@@ -102,6 +118,41 @@ void record_sun_shadow(const SunShadowInputs& in) {
                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
+}
+
+VkAccelerationStructureInstanceKHR make_rt_instance(const core::Mat4& world, u64 blas_address) {
+    VkAccelerationStructureInstanceKHR instance{};
+    // VkTransformMatrixKHR is row-major 3x4; our Mat4 is column-major.
+    for (u32 r = 0; r < 3; ++r) {
+        for (u32 c = 0; c < 4; ++c) {
+            instance.transform.matrix[r][c] = world.m[c * 4 + r];
+        }
+    }
+    instance.mask = 0xFF;
+    instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    instance.accelerationStructureReference = blas_address;
+    return instance;
+}
+
+void record_rt_sun(gpu::Renderer& gpu, VkCommandBuffer cmd, const gpu::Blas& fox_blas,
+                   VkBuffer fox_vertices, u64 fox_vertex_offset,
+                   core::Span<const VkAccelerationStructureInstanceKHR> instances, u32 slot) {
+    // Skinned vertices written by compute feed the BLAS build.
+    rt_barrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+               VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+               VK_ACCESS_2_SHADER_READ_BIT);
+    if (fox_blas.handle != VK_NULL_HANDLE) {
+        gpu.rebuild_blas(cmd, fox_blas, fox_vertices, fox_vertex_offset);
+    }
+    rt_barrier(cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+               VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+               VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+               VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+    gpu.update_tlas(cmd, instances, slot);
+    rt_barrier(cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+               VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+               VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
 }
 
 }  // namespace render

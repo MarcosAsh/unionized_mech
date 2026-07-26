@@ -74,17 +74,18 @@ void Renderer::init_bindless() {
     ASSERT_MSG(vkCreateSampler(dev, &shadow_ci, nullptr, &shadow_sampler_) == VK_SUCCESS,
                "shadow sampler");
 
-    const VkDescriptorPoolSize sizes[4] = {
+    const VkDescriptorPoolSize sizes[5] = {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, BINDLESS_STORAGE_COUNT},
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BINDLESS_SAMPLED_COUNT},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, BINDLESS_STORAGE_IMAGE_COUNT},
         {VK_DESCRIPTOR_TYPE_SAMPLER, 2},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, FRAMES_IN_FLIGHT},
     };
     VkDescriptorPoolCreateInfo pool_ci{};
     pool_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pool_ci.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     pool_ci.maxSets = 1;
-    pool_ci.poolSizeCount = 4;
+    pool_ci.poolSizeCount = device_->supports_ray_tracing() ? 5 : 4;
     pool_ci.pPoolSizes = sizes;
     ASSERT_MSG(vkCreateDescriptorPool(dev, &pool_ci, nullptr, &bindless_pool_) == VK_SUCCESS,
                "vkCreateDescriptorPool");
@@ -97,8 +98,8 @@ void Renderer::init_bindless() {
     const u32 counts[3] = {BINDLESS_STORAGE_COUNT, BINDLESS_SAMPLED_COUNT,
                            BINDLESS_STORAGE_IMAGE_COUNT};
 
-    VkDescriptorSetLayoutBinding bindings[5]{};
-    VkDescriptorBindingFlags flags[5];
+    VkDescriptorSetLayoutBinding bindings[6]{};
+    VkDescriptorBindingFlags flags[6];
     for (u32 i = 0; i < 3; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = types[i];
@@ -119,17 +120,27 @@ void Renderer::init_bindless() {
     bindings[4].stageFlags = VK_SHADER_STAGE_ALL;
     bindings[4].pImmutableSamplers = &shadow_sampler_;
     flags[4] = 0;
+    u32 binding_count = 5;
+    if (device_->supports_ray_tracing()) {
+        // One TLAS per frame slot for the ray-query shaders.
+        bindings[5].binding = 5;
+        bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        bindings[5].descriptorCount = FRAMES_IN_FLIGHT;
+        bindings[5].stageFlags = VK_SHADER_STAGE_ALL;
+        flags[5] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+        binding_count = 6;
+    }
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flag_ci{};
     flag_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flag_ci.bindingCount = 5;
+    flag_ci.bindingCount = binding_count;
     flag_ci.pBindingFlags = flags;
 
     VkDescriptorSetLayoutCreateInfo layout_ci{};
     layout_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layout_ci.pNext = &flag_ci;
     layout_ci.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layout_ci.bindingCount = 5;
+    layout_ci.bindingCount = binding_count;
     layout_ci.pBindings = bindings;
     ASSERT_MSG(vkCreateDescriptorSetLayout(dev, &layout_ci, nullptr, &bindless_layout_) ==
                    VK_SUCCESS,
@@ -156,6 +167,12 @@ Buffer Renderer::create_device_buffer(const void* data, u64 size, VkBufferUsageF
     ASSERT(staging_alloc.mapped != nullptr);
     std::memcpy(staging_alloc.mapped, data, size);
 
+    // On RT hardware every device buffer can feed acceleration structure
+    // builds and be read by address.
+    if (device_->supports_ray_tracing()) {
+        usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
     Allocation device_alloc{};
     VkBuffer device_buffer =
         create_buffer(dev, allocator_, size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -231,6 +248,10 @@ u32 Renderer::register_storage_buffer(VkBuffer buffer) {
 
 Buffer Renderer::create_gpu_buffer(u64 size, VkBufferUsageFlags usage) {
     const VkDevice dev = device_->handle();
+    if (device_->supports_ray_tracing()) {
+        usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
     Allocation alloc{};
     VkBuffer handle = create_buffer(dev, allocator_, size, usage | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &alloc);

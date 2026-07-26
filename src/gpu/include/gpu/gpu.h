@@ -115,7 +115,7 @@ struct Allocation {
 /// without callers changing.
 class Allocator {
 public:
-    void init(VkPhysicalDevice pd, VkDevice device);
+    void init(VkPhysicalDevice pd, VkDevice device, bool device_address);
     void shutdown();
     [[nodiscard]] Allocation allocate(const VkMemoryRequirements& req, VkMemoryPropertyFlags props);
 
@@ -138,6 +138,7 @@ private:
     VkPhysicalDeviceMemoryProperties mem_props_{};
     Block blocks_[MAX_BLOCKS]{};
     u32 block_count_ = 0;
+    bool device_address_ = false;
 };
 
 /// Create a buffer and bind freshly sub-allocated memory to it.
@@ -158,6 +159,19 @@ struct Texture {
     VkImageView view = VK_NULL_HANDLE;
     u32 mip_count = 0;
     u32 bindless_index = 0xFFFFFFFFu;
+};
+
+/// A bottom-level acceleration structure over one mesh, plus what a rebuild
+/// needs. Static geometry builds once; dynamic (skinned) geometry rebuilds per
+/// frame from a new vertex slice.
+struct Blas {
+    VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
+    VkDeviceAddress address = 0;
+    VkDeviceAddress scratch_address = 0;
+    VkDeviceAddress index_address = 0;
+    u32 vertex_count = 0;
+    u32 index_count = 0;
+    u32 stride = 0;
 };
 
 /// One acquired frame: the command buffer to record into and its attachments.
@@ -216,6 +230,29 @@ public:
     /// copy, waiting for the queue to drain first. An editor-event operation
     /// (map reload), never part of the frame loop.
     void update_device_buffer(const Buffer& buffer, const void* data, u64 size);
+
+    /// True when the device has the ray tracing extensions enabled.
+    [[nodiscard]] bool rt_available() const;
+
+    /// Build a triangle BLAS over `vertices` (position at offset 0 of `stride`)
+    /// and `indices`, built and ready on return. Init-time only. The scratch is
+    /// kept so dynamic geometry can rebuild via rebuild_blas.
+    [[nodiscard]] Blas create_blas(VkBuffer vertices, u32 vertex_count, u32 stride,
+                                   VkBuffer indices, u32 index_count);
+
+    /// Re-record a BLAS build over new vertex data (a skinned slice), on the
+    /// frame command buffer. The caller provides barriers around it.
+    void rebuild_blas(VkCommandBuffer cmd, const Blas& blas, VkBuffer vertices,
+                      u64 vertex_offset_bytes);
+
+    /// Create the per-frame top-level structures for at most `max_instances`
+    /// and register them at bindless binding 5. Init-time only.
+    void create_tlas(u32 max_instances);
+
+    /// Rebuild this frame slot's TLAS from `instances` on the frame command
+    /// buffer, with the barriers making it visible to fragment shaders.
+    void update_tlas(VkCommandBuffer cmd, core::Span<const VkAccelerationStructureInstanceKHR> instances,
+                     u32 slot);
 
     /// The frame-in-flight slot of the frame begun by begin_frame, in
     /// [0, frames_in_flight). Per-frame CPU-written ranges key off this.
@@ -307,6 +344,16 @@ private:
     VkImage owned_images_[MAX_OWNED_TEXTURES] = {};
     VkImageView owned_views_[MAX_OWNED_TEXTURES] = {};
     u32 owned_texture_count_ = 0;
+
+    static constexpr u32 MAX_OWNED_AS = 16;
+    VkAccelerationStructureKHR owned_as_[MAX_OWNED_AS] = {};
+    u32 owned_as_count_ = 0;
+    VkAccelerationStructureKHR tlas_[FRAMES_IN_FLIGHT] = {};
+    VkDeviceAddress tlas_scratch_address_[FRAMES_IN_FLIGHT] = {};
+    VkBuffer tlas_instance_buffer_ = VK_NULL_HANDLE;
+    VkDeviceAddress tlas_instance_address_ = 0;
+    void* tlas_instances_mapped_ = nullptr;
+    u32 tlas_max_instances_ = 0;
 
     VkQueryPool timestamp_pool_ = VK_NULL_HANDLE;
     f32 timestamp_period_ = 1.0f;

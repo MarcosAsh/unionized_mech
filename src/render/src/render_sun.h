@@ -32,4 +32,16 @@ struct SunShadowInputs {
 /// Record the whole pass: transition in, render depth, transition to sampled.
 void record_sun_shadow(const SunShadowInputs& in);
 
+/// An instance entry for the ray traced path.
+[[nodiscard]] VkAccelerationStructureInstanceKHR make_rt_instance(const core::Mat4& world,
+                                                                  u64 blas_address);
+
+/// Ray traced sun prep: rebuild the skinned fox BLAS from this frame's skinned
+/// vertices, rebuild the TLAS from `instances`, and make it visible to
+/// fragment shaders. Records onto the frame command buffer after the compute
+/// phase.
+void record_rt_sun(gpu::Renderer& gpu, VkCommandBuffer cmd, const gpu::Blas& fox_blas,
+                   VkBuffer fox_vertices, u64 fox_vertex_offset,
+                   core::Span<const VkAccelerationStructureInstanceKHR> instances, u32 slot);
+
 }  // namespace render

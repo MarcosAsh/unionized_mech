@@ -104,6 +104,8 @@ struct RenderModel {
     u32 texture_slots[MAX_MODEL_TEXTURES];  ///< Bindless indices per model texture.
     u32 submesh_count = 0;
     u32 texture_count = 0;
+    u32 total_vertices = 0;  ///< Whole-pool counts, for acceleration structures.
+    u32 total_indices = 0;
     u32 queued = 0;  ///< Records queued this frame.
     bool loaded = false;
 };

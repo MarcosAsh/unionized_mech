@@ -6,9 +6,10 @@
 
 namespace gpu {
 
-void Allocator::init(VkPhysicalDevice pd, VkDevice device) {
+void Allocator::init(VkPhysicalDevice pd, VkDevice device, bool device_address) {
     pd_ = pd;
     device_ = device;
+    device_address_ = device_address;
     vkGetPhysicalDeviceMemoryProperties(pd, &mem_props_);
 }
 
@@ -59,8 +60,15 @@ Allocation Allocator::allocate(const VkMemoryRequirements& req, VkMemoryProperty
         size = req.size;
     }
 
+    // Ray tracing reads buffers by device address, which the backing memory
+    // must be flagged for at allocation time.
+    VkMemoryAllocateFlagsInfo flags{};
+    flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+
     VkMemoryAllocateInfo ai{};
     ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ai.pNext = device_address_ ? &flags : nullptr;
     ai.allocationSize = size;
     ai.memoryTypeIndex = type;
 

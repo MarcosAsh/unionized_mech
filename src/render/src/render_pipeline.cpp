@@ -262,11 +262,13 @@ void Scene::build_pipelines() {
     // Push sizes match the shaders: the level pass takes mvp plus a buffer
     // index, the mesh pass reads per-draw records, the cull pass fills them.
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
-                   SHADER_DIR "/scene.vert.spv", SHADER_DIR "/scene.frag.spv",
+                   SHADER_DIR "/scene.vert.spv",
+                   rt_ ? SHADER_DIR "/scene_rt.frag.spv" : SHADER_DIR "/scene.frag.spv",
                    sizeof(f32) * 16 + sizeof(u32) * 3, &pipeline_, &layout_);
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
-                   SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/mesh.frag.spv", sizeof(MeshPush),
-                   &mesh_pipeline_, &mesh_layout_);
+                   SHADER_DIR "/mesh.vert.spv",
+                   rt_ ? SHADER_DIR "/mesh_rt.frag.spv" : SHADER_DIR "/mesh.frag.spv",
+                   sizeof(MeshPush), &mesh_pipeline_, &mesh_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/cull.comp.spv", sizeof(CullPush),
                   &cull_pipeline_, &cull_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/skin.comp.spv", sizeof(SkinPush),

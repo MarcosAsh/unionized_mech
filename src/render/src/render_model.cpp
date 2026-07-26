@@ -35,6 +35,8 @@ RenderModel model_load(gpu::Renderer& gpu, core::Arena& scratch, const char* bas
         model.submeshes[i] = mesh.submeshes[i];
     }
     model.submesh_count = static_cast<u32>(mesh.submeshes.size());
+    model.total_vertices = static_cast<u32>(mesh.vertices.size());
+    model.total_indices = static_cast<u32>(mesh.indices.size());
 
     // The GPU-driven draw plumbing: CPU-written records, GPU-written commands
     // and survivor counts, all sliced per frame in flight.
@@ -100,6 +102,8 @@ RenderModel model_from_data(gpu::Renderer& gpu, const asset::MeshData& mesh,
         }
     }
     model.submesh_count = static_cast<u32>(mesh.submeshes.size());
+    model.total_vertices = static_cast<u32>(mesh.vertices.size());
+    model.total_indices = static_cast<u32>(mesh.indices.size());
 
     const u32 frames = gpu::Renderer::frames_in_flight();
     void* mapped = nullptr;

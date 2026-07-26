@@ -290,7 +290,8 @@ Device::Device(Device&& other) noexcept
       graphics_family_(other.graphics_family_),
       graphics_queue_(other.graphics_queue_),
       transfer_family_(other.transfer_family_),
-      transfer_queue_(other.transfer_queue_) {
+      transfer_queue_(other.transfer_queue_),
+      ray_tracing_(other.ray_tracing_) {
     other.device_ = VK_NULL_HANDLE;
 }
 
@@ -305,6 +306,7 @@ Device& Device::operator=(Device&& other) noexcept {
         graphics_queue_ = other.graphics_queue_;
         transfer_family_ = other.transfer_family_;
         transfer_queue_ = other.transfer_queue_;
+        ray_tracing_ = other.ray_tracing_;
         other.device_ = VK_NULL_HANDLE;
     }
     return *this;
