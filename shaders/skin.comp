@@ -1,0 +1,79 @@
+#version 450
+#extension GL_EXT_nonuniform_qualifier : require
+
+// Compute skinning. One thread per vertex: blend the vertex by its four joint
+// matrices and write the result into this frame's slice of the skinned vertex
+// buffer, which the mesh pass then draws like any static mesh.
+
+layout(local_size_x = 64) in;
+
+struct Vertex {
+    float px, py, pz;
+    float nx, ny, nz;
+    float u, v;
+};
+
+// asset::SkinVertex: four u16 joints packed into two uints, four weights.
+struct SkinVertex {
+    uint j01, j23;
+    float w0, w1, w2, w3;
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer Verts {
+    Vertex v[];
+} verts[];
+
+layout(std430, set = 0, binding = 0) readonly buffer Skins {
+    SkinVertex s[];
+} skins[];
+
+layout(std430, set = 0, binding = 0) readonly buffer Matrices {
+    mat4 m[];
+} matrices[];
+
+layout(std430, set = 0, binding = 0) buffer OutVerts {
+    Vertex v[];
+} out_verts[];
+
+layout(push_constant) uniform Push {
+    uint vertex_count;
+    uint in_vbuf;
+    uint skin_buf;
+    uint matrices_buf;
+    uint matrices_base;  // this frame's slice of the matrix buffer
+    uint out_vbuf;
+    uint out_base;  // this frame's slice of the output vertex buffer
+} pc;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= pc.vertex_count) {
+        return;
+    }
+    Vertex vin = verts[pc.in_vbuf].v[id];
+    SkinVertex sv = skins[pc.skin_buf].s[id];
+
+    uint j0 = sv.j01 & 0xFFFFu;
+    uint j1 = sv.j01 >> 16;
+    uint j2 = sv.j23 & 0xFFFFu;
+    uint j3 = sv.j23 >> 16;
+
+    mat4 skin_mat = sv.w0 * matrices[pc.matrices_buf].m[pc.matrices_base + j0] +
+                    sv.w1 * matrices[pc.matrices_buf].m[pc.matrices_base + j1] +
+                    sv.w2 * matrices[pc.matrices_buf].m[pc.matrices_base + j2] +
+                    sv.w3 * matrices[pc.matrices_buf].m[pc.matrices_base + j3];
+
+    vec3 pos = (skin_mat * vec4(vin.px, vin.py, vin.pz, 1.0)).xyz;
+    vec3 normal = normalize(mat3(skin_mat) * vec3(vin.nx, vin.ny, vin.nz));
+
+    Vertex vout;
+    vout.px = pos.x;
+    vout.py = pos.y;
+    vout.pz = pos.z;
+    vout.nx = normal.x;
+    vout.ny = normal.y;
+    vout.nz = normal.z;
+    vout.u = vin.u;
+    vout.v = vin.v;
+    out_verts[pc.out_vbuf].v[pc.out_base + id] = vout;
+}

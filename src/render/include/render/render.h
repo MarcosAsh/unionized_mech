@@ -54,6 +54,8 @@ private:
     VkPipelineLayout mesh_layout_ = VK_NULL_HANDLE;
     VkPipeline cull_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout cull_layout_ = VK_NULL_HANDLE;
+    VkPipeline skin_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout skin_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkFormat color_format_ = VK_FORMAT_UNDEFINED;

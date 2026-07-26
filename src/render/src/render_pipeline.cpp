@@ -182,6 +182,8 @@ void Scene::build_pipelines() {
                    &mesh_pipeline_, &mesh_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/cull.comp.spv", sizeof(CullPush),
                   &cull_pipeline_, &cull_layout_);
+    build_compute(device_, bindless_layout_, SHADER_DIR "/skin.comp.spv", sizeof(SkinPush),
+                  &skin_pipeline_, &skin_layout_);
 }
 
 void Scene::destroy_pipelines() {
@@ -191,6 +193,8 @@ void Scene::destroy_pipelines() {
     vkDestroyPipelineLayout(device_, mesh_layout_, nullptr);
     vkDestroyPipeline(device_, cull_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, cull_layout_, nullptr);
+    vkDestroyPipeline(device_, skin_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, skin_layout_, nullptr);
 }
 
 }  // namespace render

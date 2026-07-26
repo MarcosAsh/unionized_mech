@@ -31,9 +31,22 @@ struct DrawRecord {
     u32 tex;
     u32 index_count;
     u32 first_index;
+    u32 vertex_base;  ///< vertexOffset, selecting a per-frame skinned slice.
+    u32 pad[3];
 };
 
-static_assert(sizeof(DrawRecord) == 144, "DrawRecord must match the shader layout");
+static_assert(sizeof(DrawRecord) == 160, "DrawRecord must match the shader layout");
+
+/// Push constants of the skinning pass, matching shaders/skin.comp.
+struct SkinPush {
+    u32 vertex_count;
+    u32 in_vbuf;
+    u32 skin_buf;
+    u32 matrices_buf;
+    u32 matrices_base;
+    u32 out_vbuf;
+    u32 out_base;
+};
 
 /// Push constants of the cull pass, matching shaders/cull.comp.
 struct CullPush {
@@ -70,12 +83,42 @@ struct RenderModel {
     bool loaded = false;
 };
 
+/// A rigged model: the base model plus skin weights, skeleton, clips, and the
+/// per-frame skinning plumbing. Records point at the skinned output vertices.
+struct SkinnedModel {
+    RenderModel base;
+    gpu::Buffer skin_verts;     ///< Static per-vertex joints and weights.
+    gpu::Buffer matrices;       ///< Mapped: frames x MAX_JOINTS skinning matrices.
+    gpu::Buffer skinned_verts;  ///< GPU-written skinned vertices, frames slices.
+    core::Mat4* matrices_mapped = nullptr;
+    u32 vertex_count = 0;
+    anim::Skeleton skeleton;
+    anim::Clip clips[8];
+    u32 clip_count = 0;
+};
+
 /// Load `<base>.umesh` and its `<base>.<i>.utex` textures onto the GPU.
 /// `fallback_texture` is the bindless slot used by untextured submeshes.
 /// Returns an empty model (loaded false) when files are missing, so callers
 /// can degrade gracefully. `scratch` is used only during the upload.
 [[nodiscard]] RenderModel model_load(gpu::Renderer& gpu, core::Arena& scratch, const char* base,
                                      u32 fallback_texture);
+
+/// Load a rigged model: model_load plus `<base>.uskel`, `<base>.uskin`, and
+/// `<base>.<i>.uclip`, with the skinning buffers created. Clip storage comes
+/// from `permanent`, which must outlive the model.
+[[nodiscard]] SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent,
+                                              core::Arena& scratch, const char* base,
+                                              u32 fallback_texture);
+
+/// Sample `clip` at `time`, write this frame's skinning matrices, and record
+/// the skinning dispatch. Call in the compute phase, before rendering begins.
+void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
+                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip, f32 time,
+                          u32 slot);
+
+/// Queue one instance of the skinned model. Draws this frame's skinned slice.
+void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale);
 
 /// Start a frame: clear the model's queue for frame `slot`.
 void model_begin(RenderModel& model);

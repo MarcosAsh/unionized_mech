@@ -22,6 +22,8 @@ struct DrawRecord {
     uint tex;
     uint index_count;
     uint first_index;
+    uint vertex_base;  // vertexOffset for per-frame skinned vertex slices
+    uint pad0, pad1, pad2;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer Verts {

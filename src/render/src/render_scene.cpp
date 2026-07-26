@@ -149,6 +149,7 @@ void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
 struct SceneModels {
     RenderModel duck;
     RenderModel sponza;
+    SkinnedModel fox;
     u32 white_texture = 0;
 };
 
@@ -186,6 +187,8 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
         model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
     scene.models_->sponza =
         model_load(gpu, scratch, ASSET_DIR "/sponza", scene.models_->white_texture);
+    scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
+                                            scene.models_->white_texture);
 
     scene.build_pipelines();
     scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
@@ -264,6 +267,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // command buffers from whatever the frustum keeps.
     model_begin(models_->duck);
     model_begin(models_->sponza);
+    model_begin(models_->fox.base);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
@@ -272,8 +276,21 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     }
     model_queue(models_->sponza, frame.slot, SPONZA_POS, core::Quat{}, 1.0f);
 
-    const RenderModel* fill_models[2] = {&models_->duck, &models_->sponza};
-    for (u32 i = 0; i < 2; ++i) {
+    // The fox runs a circle around the plaza, animation clocked off sim time so
+    // it stays smooth under interpolation. Clip 2 is Run in the Fox's clip list.
+    const f32 anim_time =
+        static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
+    const f32 circle_angle = anim_time * 0.6f;
+    const core::Vec3 fox_pos{18.0f * std::cos(circle_angle), 0.0f,
+                             18.0f * std::sin(circle_angle)};
+    const core::Vec3 fox_dir{-std::sin(circle_angle), 0.0f, std::cos(circle_angle)};
+    const f32 fox_yaw = std::atan2(fox_dir.x, fox_dir.z);
+    const core::Quat fox_rot = core::Quat::from_axis_half(
+        core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(fox_yaw * 0.5f), std::cos(fox_yaw * 0.5f));
+    skinned_model_queue(models_->fox, frame.slot, fox_pos, fox_rot, 0.02f);
+
+    const RenderModel* fill_models[3] = {&models_->duck, &models_->sponza, &models_->fox.base};
+    for (u32 i = 0; i < 3; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * sizeof(u32), sizeof(u32), 0);
@@ -295,6 +312,10 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot);
     model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot);
+    model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot);
+    skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_, 2,
+                         anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
@@ -358,6 +379,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                             &bindless_set_, 0, nullptr);
     model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, frame.slot);
+    model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, frame.slot);
 
     vkCmdEndRendering(frame.cmd);
 }

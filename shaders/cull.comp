@@ -18,6 +18,8 @@ struct DrawRecord {
     uint tex;
     uint index_count;
     uint first_index;
+    uint vertex_base;  // vertexOffset for per-frame skinned vertex slices
+    uint pad0, pad1, pad2;
 };
 
 struct DrawCommand {
@@ -80,7 +82,7 @@ void main() {
     cmd.index_count = rec.index_count;
     cmd.instance_count = 1u;
     cmd.first_index = rec.first_index;
-    cmd.vertex_offset = 0;
+    cmd.vertex_offset = int(rec.vertex_base);
     cmd.first_instance = id;  // carries the record index to the vertex shader
     commands[pc.commands_buf].c[pc.commands_base + slot] = cmd;
 }
