@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/arena.h"
+#include "core/result.h"
 #include "core/span.h"
 #include "core/types.h"
 
@@ -115,6 +117,19 @@ void simulate(const World& prev, const InputCmd& cmd, World& next);
 /// A 64-bit hash of the world state, stable across platforms. Used by the
 /// determinism harness and, later, by the server.
 [[nodiscard]] u64 hash(const World& w);
+
+/// Write an input tape: the exact InputCmd sequence of a run, replayable for
+/// the determinism harness and, later, for server-side verification.
+/// # Errors
+/// A static message when the file cannot be written.
+[[nodiscard]] core::Result<core::Unit, const char*> tape_save(const char* path,
+                                                              core::Span<const InputCmd> cmds);
+
+/// Load an input tape written by tape_save, backed by `arena` storage.
+/// # Errors
+/// A static message when the file is missing, truncated, or not a tape.
+[[nodiscard]] core::Result<core::Span<const InputCmd>, const char*> tape_load(core::Arena& arena,
+                                                                              const char* path);
 
 /// Fixed-timestep accumulator. Converts variable frame time into a whole number
 /// of 60Hz ticks, capping how many run in one frame but keeping the leftover

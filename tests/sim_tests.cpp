@@ -115,12 +115,44 @@ static void test_mantle_vaults_ledge() {
     ASSERT(topped);
 }
 
+// A tape written to disk and loaded back must replay to the identical hash.
+static void test_tape_round_trip() {
+    constexpr u32 N = 200;
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+
+    const core::Span<InputCmd> cmds = arena.alloc_n<InputCmd>(N);
+    for (u32 i = 0; i < N; ++i) {
+        cmds[i] = scripted(i);
+    }
+    const core::Span<const InputCmd> view(cmds.data(), cmds.size());
+
+    const char* path = "sim_tests_tape.tmp";
+    ASSERT(tape_save(path, view).is_ok());
+    core::Result<core::Span<const InputCmd>, const char*> loaded = tape_load(arena, path);
+    ASSERT(loaded.is_ok());
+    const core::Span<const InputCmd> replay = loaded.value();
+    ASSERT(replay.size() == N);
+
+    World a{};
+    World b{};
+    for (u32 i = 0; i < N; ++i) {
+        World next{};
+        simulate(a, view[i], next);
+        a = next;
+        World next_b{};
+        simulate(b, replay[i], next_b);
+        b = next_b;
+    }
+    ASSERT(hash(a) == hash(b));
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
     test_tick_advances();
     test_fixed_timestep();
     test_mantle_vaults_ledge();
+    test_tape_round_trip();
     core::log_info("sim_tests: all passed");
     return 0;
 }

@@ -1,6 +1,7 @@
 add_library(core STATIC
     arena.cpp
     assert.cpp
+    file.cpp
     log.cpp
     timer.cpp)
 
