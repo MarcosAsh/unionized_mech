@@ -89,13 +89,24 @@ InputCmd bot_think(const World& prev, u32 index) {
             desired_yaw = me.yaw + (dot_f < 0.0f ? (cross_y < 0.0f ? -0.6f : 0.6f)
                                                  : cross_y * 0.8f);
         }
-        cmd.look_dx = steer(me.yaw, desired_yaw, 0.12f);
-        const f32 desired_pitch = flat > 0.01f ? dy / flat * 0.8f : 0.0f;
-        cmd.look_dy = steer(me.pitch, desired_pitch, 0.08f);
+        // Imperfect aim: a wobble re-rolled every ~400ms drags the aim point
+        // off the true bearing, so bots miss moving targets the way people do,
+        // and the slow steer rate gives the target room to dodge.
+        const u32 wob = mix(prev.seed, prev.tick.raw / 25, index ^ 0x33u);
+        const f32 yaw_wobble =
+            (static_cast<f32>(wob & 255) * (1.0f / 255.0f) - 0.5f) * 0.15f;
+        const f32 pitch_wobble =
+            (static_cast<f32>(wob >> 8 & 255) * (1.0f / 255.0f) - 0.5f) * 0.06f;
+        desired_yaw += yaw_wobble;
+        cmd.look_dx = steer(me.yaw, desired_yaw, 0.055f);
+        const f32 desired_pitch =
+            (flat > 0.01f ? dy / flat * 0.8f : 0.0f) + pitch_wobble;
+        cmd.look_dy = steer(me.pitch, desired_pitch, 0.05f);
 
-        // Fire when roughly on target; strafe unpredictably while fighting.
+        // Fire when roughly on the (wobbled) aim, with pauses in the trigger
+        // discipline; strafe unpredictably while fighting.
         const f32 aim_err = wrap_angle(desired_yaw - me.yaw);
-        if (aim_err > -AIM_TOLERANCE && aim_err < AIM_TOLERANCE) {
+        if (aim_err > -AIM_TOLERANCE && aim_err < AIM_TOLERANCE && (wob >> 16 & 3) != 0) {
             cmd.buttons |= static_cast<u16>(Button::Fire);
         }
         const u32 r = mix(prev.seed, prev.tick.raw / 20, index);
