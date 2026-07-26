@@ -241,6 +241,52 @@ Buffer Renderer::create_mapped_buffer(u64 size, void** out_mapped) {
     return out;
 }
 
+void Renderer::update_device_buffer(const Buffer& buffer, const void* data, u64 size) {
+    const VkDevice dev = device_->handle();
+    vkQueueWaitIdle(device_->graphics_queue());  // editor event, not the frame loop
+
+    Allocation staging_alloc{};
+    VkBuffer staging = create_buffer(dev, allocator_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                     &staging_alloc);
+    ASSERT(staging_alloc.mapped != nullptr);
+    std::memcpy(staging_alloc.mapped, data, size);
+
+    VkCommandPoolCreateInfo pool_ci{};
+    pool_ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_ci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    pool_ci.queueFamilyIndex = device_->graphics_family();
+    VkCommandPool pool = VK_NULL_HANDLE;
+    ASSERT_MSG(vkCreateCommandPool(dev, &pool_ci, nullptr, &pool) == VK_SUCCESS, "update pool");
+    VkCommandBufferAllocateInfo cba{};
+    cba.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cba.commandPool = pool;
+    cba.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cba.commandBufferCount = 1;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    ASSERT_MSG(vkAllocateCommandBuffers(dev, &cba, &cmd) == VK_SUCCESS, "update cmd");
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &begin);
+    VkBufferCopy copy{};
+    copy.size = size;
+    vkCmdCopyBuffer(cmd, staging, buffer.handle, 1, &copy);
+    vkEndCommandBuffer(cmd);
+    VkCommandBufferSubmitInfo cmd_info{};
+    cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    cmd_info.commandBuffer = cmd;
+    VkSubmitInfo2 submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    submit.commandBufferInfoCount = 1;
+    submit.pCommandBufferInfos = &cmd_info;
+    vkQueueSubmit2(device_->graphics_queue(), 1, &submit, VK_NULL_HANDLE);
+    vkQueueWaitIdle(device_->graphics_queue());
+    vkDestroyCommandPool(dev, pool, nullptr);
+    vkDestroyBuffer(dev, staging, nullptr);
+}
+
 Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {
     const VkDevice dev = device_->handle();
     const u64 byte_count = static_cast<u64>(width) * height * 4u;

@@ -1,5 +1,6 @@
 #include "core/arena.h"
 #include "core/assert.h"
+#include "core/file.h"
 #include "core/log.h"
 #include "core/timer.h"
 #include "core/types.h"
@@ -85,6 +86,14 @@ int main(int argc, char** argv) {
     }
     gpu::Renderer renderer = static_cast<gpu::Renderer&&>(rend_result.value());
 
+    // The map loads before the scene so the level geometry reflects it. A
+    // missing file falls back to the built-in level.
+    core::Result<core::Unit, const char*> map_loaded = sim::load_level(scratch, MAP_PATH);
+    if (map_loaded.is_err()) {
+        core::log_infof("map: %s (%s), using built-in level", MAP_PATH, map_loaded.error());
+    }
+    i64 map_mtime = core::file_mtime(MAP_PATH);
+
     render::Scene scene = render::Scene::create(renderer, permanent, scratch);
     scratch.reset();
     core::log_infof("window %ux%u. WASD moves, mouse looks, Escape quits.", win.width(),
@@ -94,6 +103,12 @@ int main(int argc, char** argv) {
 
     sim::World prev_world{};
     sim::World curr_world{};
+    const sim::Spawn spawn = sim::level_spawn();
+    curr_world.cam_x = spawn.x;
+    curr_world.cam_y = spawn.y;
+    curr_world.cam_z = spawn.z;
+    curr_world.cam_yaw = spawn.yaw;
+    prev_world = curr_world;
     sim::FixedTimestep timestep;
 
     const u64 permanent_baseline = permanent.used();
@@ -166,6 +181,20 @@ int main(int argc, char** argv) {
             ticks_at_report = total_ticks;
             frames_at_report = frames;
             scene.maybe_reload();
+
+            // The map editor loop: edit maps/plaza.umap, and collision and
+            // visuals rebuild live, like the shader hot-reload.
+            const i64 mtime = core::file_mtime(MAP_PATH);
+            if (mtime != map_mtime) {
+                map_mtime = mtime;
+                core::Result<core::Unit, const char*> reloaded =
+                    sim::load_level(scratch, MAP_PATH);
+                if (reloaded.is_ok()) {
+                    scene.reload_level(renderer, scratch);
+                } else {
+                    core::log_errorf("map reload: %s", reloaded.error());
+                }
+            }
         }
 
         if (frame_cap != 0 && frames >= frame_cap) {

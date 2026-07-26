@@ -34,6 +34,10 @@ public:
     /// call every frame; it only rebuilds when a SPIR-V file's timestamp moves.
     void maybe_reload();
 
+    /// Rebuild the level geometry from the active sim level after a map reload.
+    /// An editor event: re-uploads the level buffers in place.
+    void reload_level(gpu::Renderer& gpu, core::Arena& scratch);
+
 private:
     Scene() = default;
 

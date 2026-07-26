@@ -1,6 +1,7 @@
 // Determinism and purity tests for the sim module. Checks are plain ASSERTs.
 
 #include "core/assert.h"
+#include "core/file.h"
 #include "core/log.h"
 #include "core/types.h"
 #include "sim/sim.h"
@@ -138,6 +139,35 @@ static void test_ledge_climb() {
     ASSERT(topped);
 }
 
+// A written map file parses back into the same boxes and spawn, and the
+// visible prefix rule holds regardless of line order.
+static void test_map_round_trip() {
+    const char* map_text =
+        "# test map\n"
+        "spawn 1 2 3 0.5\n"
+        "cbox -1 0 -1 1 4 1\n"
+        "box 5 0 5 9 2.5 9\n"
+        "box -20 0 -20 -18 6 -18\n";
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    const char* path = "sim_tests_map.tmp";
+    ASSERT(core::write_entire_file(path,
+                                   core::Span<const u8>(
+                                       reinterpret_cast<const u8*>(map_text),
+                                       __builtin_strlen(map_text)))
+               .is_ok());
+    ASSERT(load_level(arena, path).is_ok());
+
+    ASSERT(visible_boxes().size() == 2);
+    ASSERT(level_boxes().size() == 3);
+    ASSERT(visible_boxes()[0].max_y == 2.5f);
+    ASSERT(level_boxes()[2].max_y == 4.0f);  // the cbox sits after the visibles
+    ASSERT(level_spawn().x == 1.0f);
+    ASSERT(level_spawn().yaw == 0.5f);
+    ASSERT(load_level(arena, "missing.umap").is_err());
+    // The failed load keeps the previous level active.
+    ASSERT(level_boxes().size() == 3);
+}
+
 // A tape written to disk and loaded back must replay to the identical hash.
 static void test_tape_round_trip() {
     constexpr u32 N = 200;
@@ -177,6 +207,7 @@ int main() {
     test_mantle_vaults_ledge();
     test_ledge_climb();
     test_tape_round_trip();
+    test_map_round_trip();
     core::log_info("sim_tests: all passed");
     return 0;
 }

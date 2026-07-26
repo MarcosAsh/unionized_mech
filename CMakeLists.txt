@@ -40,6 +40,8 @@ add_subdirectory(src/render)
 
 add_executable(unionized_mech src/main.cpp tools/sanitizer_suppressions.cpp)
 target_link_libraries(unionized_mech PRIVATE platform gpu render)
+target_compile_definitions(unionized_mech PRIVATE
+    "MAP_PATH=\"${CMAKE_SOURCE_DIR}/maps/plaza.umap\"")
 
 # Headless determinism runner: steps the sim and prints the world hash.
 add_executable(um_headless tools/headless.cpp)

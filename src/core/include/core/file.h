@@ -17,4 +17,8 @@ namespace core {
 /// A static message when the file cannot be opened or fully written.
 [[nodiscard]] Result<Unit, const char*> write_entire_file(const char* path, Span<const u8> bytes);
 
+/// The file's modification time in nanoseconds, or 0 when it does not exist.
+/// For change detection, not for simulation.
+[[nodiscard]] i64 file_mtime(const char* path);
+
 }  // namespace core

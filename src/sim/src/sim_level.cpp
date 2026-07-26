@@ -1,5 +1,10 @@
 #include "sim_level.h"
 
+#include "core/file.h"
+#include "core/parse.h"
+
+#include <cstring>
+
 namespace sim {
 
 bool hull_overlaps(f32 x, f32 y, f32 z, f32 height, const Aabb& b) {
@@ -88,12 +93,98 @@ const Aabb LEVEL[] = {
 
 constexpr u64 VISIBLE_COUNT = sizeof(LEVEL) / sizeof(LEVEL[0]) - 4;
 
+// The active level. Immutable between loads: the built-in arrays above until a
+// map file is loaded, then the loaded copy. This is environment data standing
+// in for the compile-time constant it replaces, not hidden simulation state.
+constexpr u64 MAX_LEVEL_BOXES = 256;
+Aabb loaded_boxes[MAX_LEVEL_BOXES];
+u64 loaded_total = 0;
+u64 loaded_visible = 0;
+bool level_loaded = false;
+Spawn loaded_spawn;
+
 }  // namespace
 
 core::Span<const Aabb> level_boxes() {
+    if (level_loaded) {
+        return core::Span<const Aabb>(loaded_boxes, loaded_total);
+    }
     return core::Span<const Aabb>(LEVEL, sizeof(LEVEL) / sizeof(LEVEL[0]));
 }
 
-core::Span<const Aabb> visible_boxes() { return core::Span<const Aabb>(LEVEL, VISIBLE_COUNT); }
+core::Span<const Aabb> visible_boxes() {
+    if (level_loaded) {
+        return core::Span<const Aabb>(loaded_boxes, loaded_visible);
+    }
+    return core::Span<const Aabb>(LEVEL, VISIBLE_COUNT);
+}
+
+Spawn level_spawn() { return level_loaded ? loaded_spawn : Spawn{}; }
+
+core::Result<core::Unit, const char*> load_level(core::Arena& scratch, const char* path) {
+    using LoadResult = core::Result<core::Unit, const char*>;
+
+    const u64 marker = scratch.marker();
+    core::Result<core::Span<u8>, const char*> read = core::read_entire_file(scratch, path);
+    if (read.is_err()) {
+        return LoadResult::err(read.error());
+    }
+    const core::Span<u8> bytes = read.value();
+
+    // Visible boxes fill from the front, collision-only volumes from the back,
+    // then the back run is copied after the front so the visible prefix holds.
+    Aabb visible[MAX_LEVEL_BOXES];
+    Aabb collision[MAX_LEVEL_BOXES];
+    u64 visible_count = 0;
+    u64 collision_count = 0;
+    Spawn spawn;
+
+    core::Cursor cursor{reinterpret_cast<const char*>(bytes.data()),
+                        reinterpret_cast<const char*>(bytes.data()) + bytes.size()};
+    char word[32];
+    while (core::next_token(cursor, word, sizeof(word))) {
+        if (std::strcmp(word, "spawn") == 0) {
+            if (!core::parse_f32(cursor, &spawn.x) || !core::parse_f32(cursor, &spawn.y) ||
+                !core::parse_f32(cursor, &spawn.z) || !core::parse_f32(cursor, &spawn.yaw)) {
+                scratch.rewind(marker);
+                return LoadResult::err("map: bad spawn line");
+            }
+        } else if (std::strcmp(word, "box") == 0 || std::strcmp(word, "cbox") == 0) {
+            const bool is_visible = word[0] == 'b';
+            Aabb box{};
+            if (!core::parse_f32(cursor, &box.min_x) || !core::parse_f32(cursor, &box.min_y) ||
+                !core::parse_f32(cursor, &box.min_z) || !core::parse_f32(cursor, &box.max_x) ||
+                !core::parse_f32(cursor, &box.max_y) || !core::parse_f32(cursor, &box.max_z)) {
+                scratch.rewind(marker);
+                return LoadResult::err("map: bad box line");
+            }
+            if (visible_count + collision_count >= MAX_LEVEL_BOXES) {
+                scratch.rewind(marker);
+                return LoadResult::err("map: too many boxes");
+            }
+            if (is_visible) {
+                visible[visible_count++] = box;
+            } else {
+                collision[collision_count++] = box;
+            }
+        } else {
+            scratch.rewind(marker);
+            return LoadResult::err("map: unknown directive");
+        }
+    }
+    scratch.rewind(marker);
+
+    for (u64 i = 0; i < visible_count; ++i) {
+        loaded_boxes[i] = visible[i];
+    }
+    for (u64 i = 0; i < collision_count; ++i) {
+        loaded_boxes[visible_count + i] = collision[i];
+    }
+    loaded_visible = visible_count;
+    loaded_total = visible_count + collision_count;
+    loaded_spawn = spawn;
+    level_loaded = true;
+    return LoadResult::ok(core::Unit{});
+}
 
 }  // namespace sim

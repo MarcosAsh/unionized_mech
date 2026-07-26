@@ -1,0 +1,39 @@
+# unionized_mech map: the plaza. Edit while the game runs and it reloads live.
+# spawn x y z yaw | box x0 y0 z0 x1 y1 z1 (visible) | cbox ... (collision only)
+
+spawn 0 0 0 0
+
+# Central plaza blocks
+box -15 0 -15 -13 2 -13
+box 12 0 -16 16 4 -12
+box -17 0 11 -11 6 17
+box 10 0 10 18 8 18
+box -1 0 -19 1 2 -17
+box -2 0 16 2 4 20
+box -21 0 -3 -15 6 3
+box 14 0 -4 22 8 4
+box -7 0 5 -5 2 7
+box 6 0 -6 10 4 -2
+
+# Wallrun gauntlet, east: zig-zag between parallel offset walls
+box 20 0 33 30 6 34.5
+box 32 0 25.5 42 6 27
+box 44 0 33 54 6 34.5
+
+# Mantle stairs, south: each step one vault higher
+box -30 0 -40 -26 1 -36
+box -25 0 -40 -21 2 -36
+box -20 0 -40 -16 3 -36
+box -15 0 -40 -11 4 -36
+
+# Tower, north-west: long wallruns ending in a mantle
+box -40 0 30 -30 10 40
+
+# Practice wall, west
+box -55 0 -10 -53 7 20
+
+# Sponza atrium outer walls, collision only: the model provides the visuals
+cbox -15.4 0 -83.8 14.4 12 -81.2
+cbox -15.4 0 -99.5 14.4 12 -96.2
+cbox -15.4 0 -99.5 -13 12 -81.2
+cbox 13 0 -99.5 14.4 12 -81.2

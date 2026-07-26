@@ -112,6 +112,28 @@ struct Aabb {
 /// The prefix of level_boxes drawn as visible geometry.
 [[nodiscard]] core::Span<const Aabb> visible_boxes();
 
+/// Where the player starts, from the loaded map.
+struct Spawn {
+    f32 x = 0.0f;
+    f32 y = 0.0f;
+    f32 z = 0.0f;
+    f32 yaw = 0.0f;
+};
+
+/// The loaded map's spawn point.
+[[nodiscard]] Spawn level_spawn();
+
+/// Load a map file, replacing the active level. The format is line-based text:
+/// `spawn x y z yaw`, `box x0 y0 z0 x1 y1 z1` for visible collision boxes, and
+/// `cbox ...` for invisible collision volumes. Without a loaded map the
+/// built-in level is active. Loading is an editor event, not a frame-loop
+/// operation; `scratch` holds the file bytes during parsing.
+/// # Errors
+/// A static message when the file is missing or malformed. The previous level
+/// stays active on error.
+[[nodiscard]] core::Result<core::Unit, const char*> load_level(core::Arena& scratch,
+                                                               const char* path);
+
 /// Advance the world by one tick. Pure: it reads `prev` and `cmd` and writes
 /// `next`, with no globals and no wall-clock. The same inputs always yield the
 /// same `next`, on every target platform.

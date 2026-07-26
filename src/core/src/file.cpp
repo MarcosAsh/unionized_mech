@@ -1,6 +1,9 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "core/file.h"
 
 #include <cstdio>
+#include <sys/stat.h>
 
 namespace core {
 
@@ -40,6 +43,14 @@ WriteResult write_entire_file(const char* path, Span<const u8> bytes) {
         return WriteResult::err("short write");
     }
     return WriteResult::ok(Unit{});
+}
+
+i64 file_mtime(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    return static_cast<i64>(st.st_mtim.tv_sec) * 1000000000 + static_cast<i64>(st.st_mtim.tv_nsec);
 }
 
 }  // namespace core

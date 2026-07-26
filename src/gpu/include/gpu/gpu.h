@@ -212,6 +212,11 @@ public:
     /// Init-time only.
     [[nodiscard]] Buffer create_mapped_buffer(u64 size, void** out_mapped);
 
+    /// Replace the first `size` bytes of an existing device buffer via a staged
+    /// copy, waiting for the queue to drain first. An editor-event operation
+    /// (map reload), never part of the frame loop.
+    void update_device_buffer(const Buffer& buffer, const void* data, u64 size);
+
     /// The frame-in-flight slot of the frame begun by begin_frame, in
     /// [0, frames_in_flight). Per-frame CPU-written ranges key off this.
     [[nodiscard]] u32 frame_slot() const { return cur_slot_; }

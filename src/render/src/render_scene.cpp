@@ -76,9 +76,13 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.depth_format_ = gpu.depth_format();
     scene.index_count_ = static_cast<u32>(indices.size());
 
-    scene.vertices_ = gpu.create_device_buffer(verts.as_span().data(), verts.size() * sizeof(LevelVertex),
+    // Level buffers are sized to array capacity so a map reload can re-upload
+    // in place, whatever geometry the new map brings.
+    scene.vertices_ = gpu.create_device_buffer(verts.as_span().data(),
+                                               verts.capacity() * sizeof(LevelVertex),
                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-    scene.indices_ = gpu.create_device_buffer(indices.as_span().data(), indices.size() * sizeof(u32),
+    scene.indices_ = gpu.create_device_buffer(indices.as_span().data(),
+                                              indices.capacity() * sizeof(u32),
                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
 
     VkDrawIndexedIndirectCommand draw{};
@@ -108,6 +112,24 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.frag_mtime_ = file_mtime(SHADER_DIR "/scene.frag.spv") +
                         file_mtime(SHADER_DIR "/mesh.frag.spv");
     return scene;
+}
+
+void Scene::reload_level(gpu::Renderer& gpu, core::Arena& scratch) {
+    const u64 marker = scratch.marker();
+    core::Array<LevelVertex> verts = scratch.make_array<LevelVertex>(65536);
+    core::Array<u32> indices = scratch.make_array<u32>(131072);
+    build_level(verts, indices);
+
+    gpu.update_device_buffer(vertices_, verts.as_span().data(),
+                             verts.size() * sizeof(LevelVertex));
+    gpu.update_device_buffer(indices_, indices.as_span().data(), indices.size() * sizeof(u32));
+    index_count_ = static_cast<u32>(indices.size());
+    VkDrawIndexedIndirectCommand draw{};
+    draw.indexCount = index_count_;
+    draw.instanceCount = 1;
+    gpu.update_device_buffer(indirect_, &draw, sizeof(draw));
+    scratch.rewind(marker);
+    core::log_info("level reloaded");
 }
 
 void Scene::maybe_reload() {
