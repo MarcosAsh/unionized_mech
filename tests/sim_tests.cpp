@@ -256,7 +256,7 @@ static void test_hitscan_kills() {
         InputCmd track = fire;
         track.look_dx = static_cast<i16>(turn);
         const f32 flat = std::sqrt(dx * dx + dz * dz);
-        const f32 dy = (tgt.y + 0.9f) - (me.y + 1.6f);
+        const f32 dy = (tgt.y + 0.9f) - (me.y + 1.7f);
         const f32 want_pitch = flat > 0.1f ? std::atan2(dy, flat) : 0.0f;
         f32 pdiff = (want_pitch - me.pitch) / 0.0025f;
         if (pdiff > 3000.0f) {

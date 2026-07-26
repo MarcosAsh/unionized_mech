@@ -63,8 +63,8 @@ InputCmd bot_think(const World& prev, u32 index) {
         const f32 dy = other.y - me.y;
         const f32 dz = other.z - me.z;
         const f32 d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < best_d2 && segment_clear(me.x, me.y + EYE_HEIGHT, me.z, other.x,
-                                          other.y + EYE_HEIGHT, other.z)) {
+        if (d2 < best_d2 && segment_clear(me.x, me.y + eye_height(me), me.z, other.x,
+                                          other.y + eye_height(other), other.z)) {
             best_d2 = d2;
             target = static_cast<i32>(j);
         }
@@ -73,7 +73,7 @@ InputCmd bot_think(const World& prev, u32 index) {
     if (target >= 0) {
         const Character& enemy = prev.chars[target];
         const f32 dx = enemy.x - me.x;
-        const f32 dy = (enemy.y + 1.0f) - (me.y + EYE_HEIGHT);  // aim at the chest
+        const f32 dy = (enemy.y + 1.0f) - (me.y + eye_height(me));  // aim at the chest
         const f32 dz = enemy.z - me.z;
         const f32 flat = sim_sqrt(dx * dx + dz * dz);
         // Yaw convention: forward at yaw 0 is -Z, so yaw = atan2(x, -z). The

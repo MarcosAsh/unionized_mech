@@ -92,7 +92,7 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         const f32 dy = sim_sin(shooter.pitch);
         const f32 dz = -sim_cos(shooter.yaw) * cp;
         const f32 ox = shooter.x;
-        const f32 oy = shooter.y + EYE_HEIGHT;
+        const f32 oy = shooter.y + eye_height(shooter);
         const f32 oz = shooter.z;
 
         // The wall the shot stops at.
