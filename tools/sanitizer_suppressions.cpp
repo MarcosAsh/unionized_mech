@@ -10,6 +10,16 @@
 // Compiled only into the windowed executable. LeakSanitizer calls this weak hook
 // at startup; in non-sanitised builds it is simply unused.
 
+#include <dlfcn.h>
+
+// The Vulkan loader dlcloses the driver before LeakSanitizer runs, leaving its
+// leak frames as unknown modules that no suppression can match. Pinning the
+// driver resident keeps the frames attributable so the suppressions work. A
+// missing library is harmless.
+__attribute__((constructor)) static void pin_driver_modules() {
+    (void)dlopen("libvulkan_intel.so", RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
+}
+
 extern "C" const char* __lsan_default_suppressions(void);
 
 extern "C" const char* __lsan_default_suppressions(void) {
