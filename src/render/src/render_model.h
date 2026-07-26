@@ -65,7 +65,32 @@ struct MeshPush {
     f32 view_proj[16];
     u32 records_buf;
     u32 records_base;
+    u32 globals;
+    u32 gslot;
 };
+
+/// Push constants of the shadow mesh pass, matching shaders/shadow_mesh.vert.
+struct ShadowMeshPush {
+    f32 sun_view_proj[16];
+    u32 records_buf;
+    u32 records_base;
+};
+
+/// Per-frame render globals, matching the Globals struct in the shaders.
+struct SceneGlobals {
+    f32 sun_view_proj[16];
+    f32 sun_dir[4];
+    u32 shadow_tex;
+    u32 pad[3];
+};
+
+static_assert(sizeof(SceneGlobals) == 96, "SceneGlobals must match the shader layout");
+
+/// Indirect command slices per frame: the camera pass and the sun shadow pass
+/// cull independently, so each model carries two command runs per frame slot.
+constexpr u32 PASS_CAMERA = 0;
+constexpr u32 PASS_SHADOW = 1;
+constexpr u32 PASS_COUNT = 2;
 
 /// An imported model with its geometry, textures, and GPU-driven draw buffers.
 struct RenderModel {
@@ -135,14 +160,18 @@ void model_begin(RenderModel& model);
 /// submesh into this frame's slice.
 void model_queue(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale);
 
-/// Record the cull dispatch for this frame's queued records. The caller wraps
-/// the fill and dispatch in the appropriate barriers.
+/// Record the cull dispatch for this frame's queued records into the given
+/// pass's command slice. The caller wraps the fill and dispatch in barriers.
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
                 VkPipelineLayout layout, VkDescriptorSet bindless, const f32 planes[6][4],
-                u32 slot);
+                u32 slot, u32 pass);
 
-/// Record the counted indirect draw of the culled survivors.
+/// Record the counted indirect draw of the camera pass survivors.
 void model_draw_culled(const RenderModel& model, VkCommandBuffer cmd, VkPipelineLayout layout,
-                       const core::Mat4& view_proj, u32 slot);
+                       const core::Mat4& view_proj, u32 globals, u32 slot);
+
+/// Record the counted indirect draw of the shadow pass survivors, depth only.
+void model_draw_shadow(const RenderModel& model, VkCommandBuffer cmd, VkPipelineLayout layout,
+                       const core::Mat4& sun_view_proj, u32 slot);
 
 }  // namespace render

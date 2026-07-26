@@ -425,6 +425,15 @@ Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {
     owned_views_[owned_texture_count_] = view;
     ++owned_texture_count_;
 
+    Texture out;
+    out.image = image;
+    out.view = view;
+    out.mip_count = mip_count;
+    out.bindless_index = register_sampled_image(view);
+    return out;
+}
+
+u32 Renderer::register_sampled_image(VkImageView view) {
     const u32 index = next_sampled_index_++;
     VkDescriptorImageInfo info{};
     info.imageView = view;
@@ -437,14 +446,41 @@ Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &info;
-    vkUpdateDescriptorSets(dev, 1, &write, 0, nullptr);
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+    return index;
+}
 
-    Texture out;
-    out.image = image;
-    out.view = view;
-    out.mip_count = mip_count;
-    out.bindless_index = index;
-    return out;
+void Renderer::create_shadow_map() {
+    const VkDevice dev = device_->handle();
+
+    VkImageCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    ci.imageType = VK_IMAGE_TYPE_2D;
+    ci.format = DEPTH_FORMAT;
+    ci.extent = {shadow_size(), shadow_size(), 1};
+    ci.mipLevels = 1;
+    ci.arrayLayers = 1;
+    ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ASSERT_MSG(vkCreateImage(dev, &ci, nullptr, &shadow_image_) == VK_SUCCESS, "shadow image");
+
+    VkMemoryRequirements req;
+    vkGetImageMemoryRequirements(dev, shadow_image_, &req);
+    const Allocation alloc = allocator_.allocate(req, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ASSERT_MSG(vkBindImageMemory(dev, shadow_image_, alloc.memory, alloc.offset) == VK_SUCCESS,
+               "shadow bind");
+
+    VkImageViewCreateInfo vci{};
+    vci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    vci.image = shadow_image_;
+    vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vci.format = DEPTH_FORMAT;
+    vci.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    ASSERT_MSG(vkCreateImageView(dev, &vci, nullptr, &shadow_view_) == VK_SUCCESS, "shadow view");
+
+    shadow_bindless_ = register_sampled_image(shadow_view_);
 }
 
 void Renderer::create_depth() {

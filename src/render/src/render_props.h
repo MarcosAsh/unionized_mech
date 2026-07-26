@@ -40,10 +40,6 @@ constexpr core::Vec3 SPONZA_POS{0.0f, 0.0f, -90.0f};
 /// visible collision boxes.
 void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 
-/// A dark ground disc that visually glues characters to the floor until real
-/// shadows arrive in M5.
-[[nodiscard]] RenderModel make_blob_shadow(gpu::Renderer& gpu, u32 fallback_texture);
-
 /// A placeholder first-person weapon made of boxes. Establishes the viewmodel
 /// system that real arm art replaces later.
 [[nodiscard]] RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture);

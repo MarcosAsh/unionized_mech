@@ -23,6 +23,7 @@ RendererResult Renderer::create(const Device& device, VkSurfaceKHR surface, u32 
     r.surface_ = surface;
     r.allocator_.init(device.physical(), device.handle());
     r.init_bindless();
+    r.create_shadow_map();
 
     VkSemaphoreTypeCreateInfo timeline_type{};
     timeline_type.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
@@ -191,6 +192,12 @@ Renderer::~Renderer() {
     if (bindless_layout_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(dev, bindless_layout_, nullptr);
     }
+    if (shadow_view_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(dev, shadow_view_, nullptr);
+    }
+    if (shadow_image_ != VK_NULL_HANDLE) {
+        vkDestroyImage(dev, shadow_image_, nullptr);
+    }
     destroy_image_objects();
     if (swapchain_ != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(dev, swapchain_, nullptr);
@@ -230,6 +237,9 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
     image_count_ = other.image_count_;
     depth_image_ = other.depth_image_;
     depth_view_ = other.depth_view_;
+    shadow_image_ = other.shadow_image_;
+    shadow_view_ = other.shadow_view_;
+    shadow_bindless_ = other.shadow_bindless_;
     timeline_ = other.timeline_;
     frame_counter_ = other.frame_counter_;
     bindless_pool_ = other.bindless_pool_;

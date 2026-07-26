@@ -52,6 +52,47 @@ struct Frustum {
     return out;
 }
 
+/// Orthographic projection for the Vulkan conventions: depth [0, 1], Y flipped.
+/// Used by the sun shadow pass.
+[[nodiscard]] inline Mat4 orthographic(f32 left, f32 right, f32 bottom, f32 top, f32 znear,
+                                       f32 zfar) {
+    Mat4 out;
+    out.m[0] = 2.0f / (right - left);
+    out.m[5] = -2.0f / (top - bottom);
+    out.m[10] = 1.0f / (znear - zfar);
+    out.m[12] = -(right + left) / (right - left);
+    out.m[13] = (top + bottom) / (top - bottom);
+    out.m[14] = znear / (znear - zfar);
+    return out;
+}
+
+/// View matrix looking along `dir` from `eye`, up biased to world Y.
+[[nodiscard]] inline Mat4 look_along(Vec3 eye, Vec3 dir) {
+    const Vec3 forward = dir.normalized();
+    Vec3 right = cross(forward, Vec3{0.0f, 1.0f, 0.0f});
+    if (right.length_sq() < 1e-6f) {
+        right = Vec3{1.0f, 0.0f, 0.0f};
+    } else {
+        right = right.normalized();
+    }
+    const Vec3 up = cross(right, forward);
+
+    Mat4 out;
+    out.m[0] = right.x;
+    out.m[4] = right.y;
+    out.m[8] = right.z;
+    out.m[12] = -dot(right, eye);
+    out.m[1] = up.x;
+    out.m[5] = up.y;
+    out.m[9] = up.z;
+    out.m[13] = -dot(up, eye);
+    out.m[2] = -forward.x;
+    out.m[6] = -forward.y;
+    out.m[10] = -forward.z;
+    out.m[14] = dot(forward, eye);
+    return out;
+}
+
 /// Right-handed Vulkan perspective. Depth maps to [0, 1] and Y is flipped so
 /// the image is upright in Vulkan's coordinate system.
 [[nodiscard]] inline Mat4 perspective(f32 fovy, f32 aspect, f32 znear, f32 zfar) {

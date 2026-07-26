@@ -48,6 +48,10 @@ private:
     static void build_compute(VkDevice device, VkDescriptorSetLayout bindless_layout,
                               const char* comp_spv, u32 push_bytes, VkPipeline* out_pipeline,
                               VkPipelineLayout* out_layout);
+    static void build_shadow_pipeline(VkDevice device, VkFormat depth_format,
+                                      VkDescriptorSetLayout bindless_layout, const char* vert_spv,
+                                      u32 push_bytes, VkPipeline* out_pipeline,
+                                      VkPipelineLayout* out_layout);
     void build_pipelines();
     void destroy_pipelines();
 
@@ -60,6 +64,10 @@ private:
     VkPipelineLayout cull_layout_ = VK_NULL_HANDLE;
     VkPipeline skin_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout skin_layout_ = VK_NULL_HANDLE;
+    VkPipeline shadow_level_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout shadow_level_layout_ = VK_NULL_HANDLE;
+    VkPipeline shadow_mesh_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout shadow_mesh_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkFormat color_format_ = VK_FORMAT_UNDEFINED;
@@ -70,6 +78,9 @@ private:
     u32 index_count_ = 0;
 
     SceneModels* models_ = nullptr;  ///< Imported models, in the permanent arena.
+    VkImage shadow_image_ = VK_NULL_HANDLE;   ///< Borrowed from the renderer.
+    VkImageView shadow_view_ = VK_NULL_HANDLE;
+    u32 shadow_tex_ = 0;  ///< Bindless slot of the shadow map.
     i64 vert_mtime_ = 0;
     i64 frag_mtime_ = 0;
     f32 cur_roll_ = 0.0f;    ///< Eased camera roll, cosmetic state only.

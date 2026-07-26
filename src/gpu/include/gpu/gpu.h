@@ -220,6 +220,13 @@ public:
     /// The frame-in-flight slot of the frame begun by begin_frame, in
     /// [0, frames_in_flight). Per-frame CPU-written ranges key off this.
     [[nodiscard]] u32 frame_slot() const { return cur_slot_; }
+
+    /// The sun shadow map depth target and its bindless sampled slot.
+    [[nodiscard]] VkImage shadow_image() const { return shadow_image_; }
+    [[nodiscard]] VkImageView shadow_view() const { return shadow_view_; }
+    [[nodiscard]] u32 shadow_bindless() const { return shadow_bindless_; }
+    /// Shadow map resolution in texels per side.
+    static constexpr u32 shadow_size() { return 2048; }
     /// Number of frames in flight, for sizing per-frame ranges.
     [[nodiscard]] static constexpr u32 frames_in_flight() { return FRAMES_IN_FLIGHT; }
 
@@ -260,7 +267,9 @@ private:
     void destroy_image_objects();
     void init_bindless();
     void create_depth();
+    void create_shadow_map();
     [[nodiscard]] u32 register_storage_buffer(VkBuffer buffer);
+    [[nodiscard]] u32 register_sampled_image(VkImageView view);
 
     const Device* device_ = nullptr;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
@@ -276,6 +285,10 @@ private:
 
     VkImage depth_image_ = VK_NULL_HANDLE;
     VkImageView depth_view_ = VK_NULL_HANDLE;
+
+    VkImage shadow_image_ = VK_NULL_HANDLE;
+    VkImageView shadow_view_ = VK_NULL_HANDLE;
+    u32 shadow_bindless_ = 0;
 
     VkSemaphore image_available_[FRAMES_IN_FLIGHT] = {};
     VkCommandPool pools_[FRAMES_IN_FLIGHT] = {};

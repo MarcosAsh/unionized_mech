@@ -38,12 +38,15 @@ layout(push_constant) uniform Push {
     mat4 view_proj;
     uint records_buf;
     uint records_base;  // this frame's slice of the record buffer
+    uint globals;
+    uint gslot;
 } pc;
 
 layout(location = 0) out vec3 frag_normal;
 layout(location = 1) out vec2 frag_uv;
 layout(location = 2) flat out vec4 frag_color;
 layout(location = 3) flat out uint frag_tex;
+layout(location = 4) out vec3 frag_world;
 
 vec3 quat_rotate(vec4 q, vec3 v) {
     vec3 t = 2.0 * cross(q.xyz, v);
@@ -53,7 +56,9 @@ vec3 quat_rotate(vec4 q, vec3 v) {
 void main() {
     DrawRecord rec = records[pc.records_buf].r[pc.records_base + gl_InstanceIndex];
     Vertex vert = verts[nonuniformEXT(rec.vbuf)].v[gl_VertexIndex];
-    gl_Position = pc.view_proj * rec.model * vec4(vert.px, vert.py, vert.pz, 1.0);
+    vec4 world = rec.model * vec4(vert.px, vert.py, vert.pz, 1.0);
+    gl_Position = pc.view_proj * world;
+    frag_world = world.xyz;
     frag_normal = quat_rotate(rec.rot, vec3(vert.nx, vert.ny, vert.nz));
     frag_uv = vec2(vert.u, vert.v);
     frag_color = rec.color;

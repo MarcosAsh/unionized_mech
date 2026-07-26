@@ -43,10 +43,11 @@ RenderModel model_load(gpu::Renderer& gpu, core::Arena& scratch, const char* bas
     model.records = gpu.create_mapped_buffer(
         static_cast<u64>(frames) * MAX_MODEL_DRAWS * sizeof(DrawRecord), &mapped);
     model.records_mapped = static_cast<DrawRecord*>(mapped);
-    model.commands = gpu.create_gpu_buffer(
-        static_cast<u64>(frames) * MAX_MODEL_DRAWS * sizeof(VkDrawIndexedIndirectCommand),
-        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
-    model.counts = gpu.create_gpu_buffer(static_cast<u64>(frames) * sizeof(u32),
+    model.commands = gpu.create_gpu_buffer(static_cast<u64>(frames) * PASS_COUNT *
+                                               MAX_MODEL_DRAWS *
+                                               sizeof(VkDrawIndexedIndirectCommand),
+                                           VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+    model.counts = gpu.create_gpu_buffer(static_cast<u64>(frames) * PASS_COUNT * sizeof(u32),
                                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
@@ -105,10 +106,11 @@ RenderModel model_from_data(gpu::Renderer& gpu, const asset::MeshData& mesh,
     model.records = gpu.create_mapped_buffer(
         static_cast<u64>(frames) * MAX_MODEL_DRAWS * sizeof(DrawRecord), &mapped);
     model.records_mapped = static_cast<DrawRecord*>(mapped);
-    model.commands = gpu.create_gpu_buffer(
-        static_cast<u64>(frames) * MAX_MODEL_DRAWS * sizeof(VkDrawIndexedIndirectCommand),
-        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
-    model.counts = gpu.create_gpu_buffer(static_cast<u64>(frames) * sizeof(u32),
+    model.commands = gpu.create_gpu_buffer(static_cast<u64>(frames) * PASS_COUNT *
+                                               MAX_MODEL_DRAWS *
+                                               sizeof(VkDrawIndexedIndirectCommand),
+                                           VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+    model.counts = gpu.create_gpu_buffer(static_cast<u64>(frames) * PASS_COUNT * sizeof(u32),
                                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     model.loaded = true;
@@ -270,7 +272,7 @@ void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Qu
 
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
                 VkPipelineLayout layout, VkDescriptorSet bindless, const f32 planes[6][4],
-                u32 slot) {
+                u32 slot, u32 pass) {
     if (!model.loaded || model.queued == 0) {
         return;
     }
@@ -284,15 +286,15 @@ void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeli
     push.records_buf = model.records.bindless_index;
     push.records_base = slot * MAX_MODEL_DRAWS;
     push.commands_buf = model.commands.bindless_index;
-    push.commands_base = slot * MAX_MODEL_DRAWS;
+    push.commands_base = (slot * PASS_COUNT + pass) * MAX_MODEL_DRAWS;
     push.count_buf = model.counts.bindless_index;
-    push.count_slot = slot;
+    push.count_slot = slot * PASS_COUNT + pass;
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
     vkCmdDispatch(cmd, (model.queued + 63) / 64, 1, 1);
 }
 
 void model_draw_culled(const RenderModel& model, VkCommandBuffer cmd, VkPipelineLayout layout,
-                       const core::Mat4& view_proj, u32 slot) {
+                       const core::Mat4& view_proj, u32 globals, u32 slot) {
     if (!model.loaded || model.queued == 0) {
         return;
     }
@@ -302,14 +304,39 @@ void model_draw_culled(const RenderModel& model, VkCommandBuffer cmd, VkPipeline
     std::memcpy(push.view_proj, view_proj.m, sizeof(push.view_proj));
     push.records_buf = model.records.bindless_index;
     push.records_base = slot * MAX_MODEL_DRAWS;
+    push.globals = globals;
+    push.gslot = slot;
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(push), &push);
 
+    const u64 pass_index = static_cast<u64>(slot) * PASS_COUNT + PASS_CAMERA;
     vkCmdDrawIndexedIndirectCount(cmd, model.commands.handle,
-                                  static_cast<u64>(slot) * MAX_MODEL_DRAWS *
+                                  pass_index * MAX_MODEL_DRAWS *
                                       sizeof(VkDrawIndexedIndirectCommand),
-                                  model.counts.handle, static_cast<u64>(slot) * sizeof(u32),
-                                  MAX_MODEL_DRAWS, sizeof(VkDrawIndexedIndirectCommand));
+                                  model.counts.handle, pass_index * sizeof(u32), MAX_MODEL_DRAWS,
+                                  sizeof(VkDrawIndexedIndirectCommand));
+}
+
+void model_draw_shadow(const RenderModel& model, VkCommandBuffer cmd, VkPipelineLayout layout,
+                       const core::Mat4& sun_view_proj, u32 slot) {
+    if (!model.loaded || model.queued == 0) {
+        return;
+    }
+    vkCmdBindIndexBuffer(cmd, model.indices.handle, 0, VK_INDEX_TYPE_UINT32);
+
+    ShadowMeshPush push{};
+    std::memcpy(push.sun_view_proj, sun_view_proj.m, sizeof(push.sun_view_proj));
+    push.records_buf = model.records.bindless_index;
+    push.records_base = slot * MAX_MODEL_DRAWS;
+    vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(push), &push);
+
+    const u64 pass_index = static_cast<u64>(slot) * PASS_COUNT + PASS_SHADOW;
+    vkCmdDrawIndexedIndirectCount(cmd, model.commands.handle,
+                                  pass_index * MAX_MODEL_DRAWS *
+                                      sizeof(VkDrawIndexedIndirectCommand),
+                                  model.counts.handle, pass_index * sizeof(u32), MAX_MODEL_DRAWS,
+                                  sizeof(VkDrawIndexedIndirectCommand));
 }
 
 }  // namespace render

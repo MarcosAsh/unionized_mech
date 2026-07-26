@@ -171,12 +171,99 @@ void Scene::build_compute(VkDevice device, VkDescriptorSetLayout bindless_layout
     vkDestroyShaderModule(device, comp, nullptr);
 }
 
+void Scene::build_shadow_pipeline(VkDevice device, VkFormat depth_format,
+                                  VkDescriptorSetLayout bindless_layout, const char* vert_spv,
+                                  u32 push_bytes, VkPipeline* out_pipeline,
+                                  VkPipelineLayout* out_layout) {
+    const VkShaderModule vert = load_shader_module(device, vert_spv);
+
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stage.module = vert;
+    stage.pName = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertex_input{};
+    vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo input_assembly{};
+    input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo viewport{};
+    viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport.viewportCount = 1;
+    viewport.scissorCount = 1;
+
+    // Depth bias pushes casters slightly away from the sun to fight acne.
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0f;
+    raster.depthBiasEnable = VK_TRUE;
+    raster.depthBiasConstantFactor = 1.5f;
+    raster.depthBiasSlopeFactor = 2.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo depth{};
+    depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth.depthTestEnable = VK_TRUE;
+    depth.depthWriteEnable = VK_TRUE;
+    depth.depthCompareOp = VK_COMPARE_OP_LESS;
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+
+    const VkDynamicState dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{};
+    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic.dynamicStateCount = 2;
+    dynamic.pDynamicStates = dynamic_states;
+
+    VkPushConstantRange push{};
+    push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    push.size = push_bytes;
+    VkPipelineLayoutCreateInfo layout_ci{};
+    layout_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_ci.setLayoutCount = 1;
+    layout_ci.pSetLayouts = &bindless_layout;
+    layout_ci.pushConstantRangeCount = 1;
+    layout_ci.pPushConstantRanges = &push;
+    ASSERT_MSG(vkCreatePipelineLayout(device, &layout_ci, nullptr, out_layout) == VK_SUCCESS,
+               "shadow pipeline layout");
+
+    VkPipelineRenderingCreateInfo rendering{};
+    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering.depthAttachmentFormat = depth_format;
+
+    VkGraphicsPipelineCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    ci.pNext = &rendering;
+    ci.stageCount = 1;
+    ci.pStages = &stage;
+    ci.pVertexInputState = &vertex_input;
+    ci.pInputAssemblyState = &input_assembly;
+    ci.pViewportState = &viewport;
+    ci.pRasterizationState = &raster;
+    ci.pMultisampleState = &multisample;
+    ci.pDepthStencilState = &depth;
+    ci.pColorBlendState = &blend;
+    ci.pDynamicState = &dynamic;
+    ci.layout = *out_layout;
+    ASSERT_MSG(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, out_pipeline) ==
+                   VK_SUCCESS,
+               "shadow pipeline");
+
+    vkDestroyShaderModule(device, vert, nullptr);
+}
+
 void Scene::build_pipelines() {
     // Push sizes match the shaders: the level pass takes mvp plus a buffer
     // index, the mesh pass reads per-draw records, the cull pass fills them.
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/scene.vert.spv", SHADER_DIR "/scene.frag.spv",
-                   sizeof(f32) * 16 + sizeof(u32), &pipeline_, &layout_);
+                   sizeof(f32) * 16 + sizeof(u32) * 3, &pipeline_, &layout_);
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/mesh.frag.spv", sizeof(MeshPush),
                    &mesh_pipeline_, &mesh_layout_);
@@ -184,6 +271,12 @@ void Scene::build_pipelines() {
                   &cull_pipeline_, &cull_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/skin.comp.spv", sizeof(SkinPush),
                   &skin_pipeline_, &skin_layout_);
+    build_shadow_pipeline(device_, depth_format_, bindless_layout_,
+                          SHADER_DIR "/shadow_level.vert.spv", sizeof(f32) * 16 + sizeof(u32),
+                          &shadow_level_pipeline_, &shadow_level_layout_);
+    build_shadow_pipeline(device_, depth_format_, bindless_layout_,
+                          SHADER_DIR "/shadow_mesh.vert.spv", sizeof(ShadowMeshPush),
+                          &shadow_mesh_pipeline_, &shadow_mesh_layout_);
 }
 
 void Scene::destroy_pipelines() {
@@ -195,6 +288,10 @@ void Scene::destroy_pipelines() {
     vkDestroyPipelineLayout(device_, cull_layout_, nullptr);
     vkDestroyPipeline(device_, skin_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, skin_layout_, nullptr);
+    vkDestroyPipeline(device_, shadow_level_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, shadow_level_layout_, nullptr);
+    vkDestroyPipeline(device_, shadow_mesh_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, shadow_mesh_layout_, nullptr);
 }
 
 }  // namespace render

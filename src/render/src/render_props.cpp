@@ -114,40 +114,6 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
     }
 }
 
-RenderModel make_blob_shadow(gpu::Renderer& gpu, u32 fallback_texture) {
-    constexpr u32 SEGMENTS = 16;
-    static asset::MeshVertex verts[SEGMENTS + 1];
-    static u32 indices[SEGMENTS * 3];
-    verts[0].pos = core::Vec3{0.0f, 0.0f, 0.0f};
-    verts[0].normal = core::Vec3{0.0f, 1.0f, 0.0f};
-    for (u32 i = 0; i < SEGMENTS; ++i) {
-        const f32 a = static_cast<f32>(i) * (6.2831853f / SEGMENTS);
-        verts[i + 1].pos = core::Vec3{std::cos(a), 0.0f, std::sin(a)};
-        verts[i + 1].normal = core::Vec3{0.0f, 1.0f, 0.0f};
-        indices[i * 3] = 0;
-        indices[i * 3 + 1] = 1 + (i + 1) % SEGMENTS;
-        indices[i * 3 + 2] = 1 + i;
-    }
-    static asset::Submesh sub;
-    sub.index_count = SEGMENTS * 3;
-    sub.texture = asset::NO_TEXTURE;
-    sub.color[0] = 0.10f;
-    sub.color[1] = 0.10f;
-    sub.color[2] = 0.12f;
-    sub.bounds_min[0] = -1.0f;
-    sub.bounds_min[1] = -0.1f;
-    sub.bounds_min[2] = -1.0f;
-    sub.bounds_max[0] = 1.0f;
-    sub.bounds_max[1] = 0.1f;
-    sub.bounds_max[2] = 1.0f;
-
-    asset::MeshData mesh;
-    mesh.vertices = core::Span<const asset::MeshVertex>(verts, SEGMENTS + 1);
-    mesh.indices = core::Span<const u32>(indices, SEGMENTS * 3);
-    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
-    return model_from_data(gpu, mesh, fallback_texture);
-}
-
 RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {
     // Three boxes: barrel and grip in gunmetal, a sight blade in accent orange.
     static asset::MeshVertex verts[3 * 24];

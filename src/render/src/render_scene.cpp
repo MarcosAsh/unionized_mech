@@ -20,6 +20,13 @@ namespace {
 struct PushConstants {
     f32 view_proj[16];
     u32 vbuf;
+    u32 globals;
+    u32 gslot;
+};
+
+struct ShadowLevelPush {
+    f32 sun_view_proj[16];
+    u32 vbuf;
 };
 
 // A global execution and memory barrier between the cull pre-pass stages.
@@ -35,6 +42,30 @@ void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAcce
     dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dep.memoryBarrierCount = 1;
     dep.pMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(cmd, &dep);
+}
+
+// A depth image layout transition for the shadow pass.
+void shadow_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout,
+                    VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,
+                    VkAccessFlags2 src_access, VkPipelineStageFlags2 dst_stage,
+                    VkAccessFlags2 dst_access) {
+    VkImageMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = src_stage;
+    barrier.srcAccessMask = src_access;
+    barrier.dstStageMask = dst_stage;
+    barrier.dstAccessMask = dst_access;
+    barrier.oldLayout = old_layout;
+    barrier.newLayout = new_layout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers = &barrier;
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
@@ -54,9 +85,10 @@ struct SceneModels {
     RenderModel duck;
     RenderModel sponza;
     SkinnedModel fox;
-    RenderModel blob_shadow;
     RenderModel viewmodel;
     FoxCompanion fox_state;
+    gpu::Buffer globals;
+    SceneGlobals* globals_mapped = nullptr;
     f32 last_anim_time = 0.0f;
     u32 white_texture = 0;
 };
@@ -71,6 +103,9 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     Scene scene;
     scene.device_ = gpu.device_handle();
     scene.bindless_set_ = gpu.bindless_set();
+    scene.shadow_image_ = gpu.shadow_image();
+    scene.shadow_view_ = gpu.shadow_view();
+    scene.shadow_tex_ = gpu.shadow_bindless();
     scene.bindless_layout_ = gpu.bindless_layout();
     scene.color_format_ = gpu.color_format();
     scene.depth_format_ = gpu.depth_format();
@@ -103,8 +138,11 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
         model_load(gpu, scratch, ASSET_DIR "/sponza", scene.models_->white_texture);
     scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
                                             scene.models_->white_texture);
-    scene.models_->blob_shadow = make_blob_shadow(gpu, scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
+    void* globals_mapped = nullptr;
+    scene.models_->globals = gpu.create_mapped_buffer(
+        gpu::Renderer::frames_in_flight() * sizeof(SceneGlobals), &globals_mapped);
+    scene.models_->globals_mapped = static_cast<SceneGlobals*>(globals_mapped);
 
     scene.build_pipelines();
     scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
@@ -134,7 +172,9 @@ void Scene::reload_level(gpu::Renderer& gpu, core::Arena& scratch) {
 
 void Scene::maybe_reload() {
     const i64 vert = file_mtime(SHADER_DIR "/scene.vert.spv") +
-                     file_mtime(SHADER_DIR "/mesh.vert.spv");
+                     file_mtime(SHADER_DIR "/mesh.vert.spv") +
+                     file_mtime(SHADER_DIR "/shadow_level.vert.spv") +
+                     file_mtime(SHADER_DIR "/shadow_mesh.vert.spv");
     const i64 frag = file_mtime(SHADER_DIR "/scene.frag.spv") +
                      file_mtime(SHADER_DIR "/mesh.frag.spv");
     if (vert == vert_mtime_ && frag == frag_mtime_) {
@@ -202,7 +242,6 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->duck);
     model_begin(models_->sponza);
     model_begin(models_->fox.base);
-    model_begin(models_->blob_shadow);
     model_begin(models_->viewmodel);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
@@ -239,20 +278,31 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_queue(models_->viewmodel, frame.slot, core::Vec3{0.17f, -0.14f, -0.33f}, core::Quat{},
                 1.0f);
 
-    // Blob shadows glue the animated characters to the floor until M5 shadows.
-    const core::Vec3 lift{0.0f, 0.02f, 0.0f};  // above the floor, below the feet
-    model_queue(models_->blob_shadow, frame.slot, fox_pos + lift, core::Quat{}, 1.1f);
-    for (const DuckSpot& spot : DUCKS) {
-        model_queue(models_->blob_shadow, frame.slot, spot.pos + lift, core::Quat{},
-                    0.55f * spot.scale);
-    }
+    // The sun: a fixed direction over the map, orthographic shadow volume
+    // covering the whole play area. The per-frame globals carry it to shaders.
+    const Vec3 sun_dir = Vec3{0.4f, 1.0f, 0.25f}.normalized();
+    const Vec3 sun_center{0.0f, 0.0f, -20.0f};
+    const Mat4 sun_view = look_along(sun_center + sun_dir * 120.0f, sun_dir * -1.0f);
+    const Mat4 sun_proj = orthographic(-130.0f, 130.0f, -130.0f, 130.0f, 1.0f, 300.0f);
+    const Mat4 sun_view_proj = sun_proj * sun_view;
 
-    const RenderModel* fill_models[5] = {&models_->duck, &models_->sponza, &models_->fox.base,
-                                         &models_->blob_shadow, &models_->viewmodel};
-    for (u32 i = 0; i < 5; ++i) {
+    SceneGlobals& globals = models_->globals_mapped[frame.slot];
+    for (u32 i = 0; i < 16; ++i) {
+        globals.sun_view_proj[i] = sun_view_proj.m[i];
+    }
+    globals.sun_dir[0] = sun_dir.x;
+    globals.sun_dir[1] = sun_dir.y;
+    globals.sun_dir[2] = sun_dir.z;
+    globals.sun_dir[3] = 0.0f;
+    globals.shadow_tex = shadow_tex_;
+
+    const RenderModel* fill_models[4] = {&models_->duck, &models_->sponza, &models_->fox.base,
+                                         &models_->viewmodel};
+    for (u32 i = 0; i < 4; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
-                            static_cast<u64>(frame.slot) * sizeof(u32), sizeof(u32), 0);
+                            static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
+                            PASS_COUNT * sizeof(u32), 0);
         }
     }
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -267,28 +317,100 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         planes[i][2] = frustum.planes[i].z;
         planes[i][3] = frustum.planes[i].w;
     }
-    model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot);
-    model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot);
-    model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot);
-    model_cull(models_->blob_shadow, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
-               planes, frame.slot);
-    // The viewmodel is always on screen by construction: cull it with planes
-    // that accept everything, since its record is in camera space.
     f32 accept_all[6][4] = {};
     for (u32 i = 0; i < 6; ++i) {
         accept_all[i][3] = 1.0f;
     }
+    model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot, PASS_CAMERA);
+    model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot, PASS_CAMERA);
+    model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot, PASS_CAMERA);
+    // The viewmodel is always on screen by construction: cull it with planes
+    // that accept everything, since its record is in camera space.
     model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
-               accept_all, frame.slot);
+               accept_all, frame.slot, PASS_CAMERA);
+    // Shadow casters are culled permissively: the sun sees the whole map.
+    model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
+               frame.slot, PASS_SHADOW);
+    model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_SHADOW);
+    model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_SHADOW);
     skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_,
                          fox_clip_a, fox_clip_b, fox_blend, anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
                    VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+
+    // The sun shadow pass: depth only, from the sun's orthographic view. The
+    // previous frame's read finished before this slot was reacquired, so the
+    // transition can come from undefined.
+    shadow_barrier(frame.cmd, shadow_image_, VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
+                   VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                       VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                   VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+    {
+        VkRenderingAttachmentInfo shadow_depth{};
+        shadow_depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        shadow_depth.imageView = shadow_view_;
+        shadow_depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        shadow_depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        shadow_depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        shadow_depth.clearValue.depthStencil = {1.0f, 0};
+
+        VkRenderingInfo shadow_pass{};
+        shadow_pass.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        shadow_pass.renderArea.extent = {gpu::Renderer::shadow_size(),
+                                         gpu::Renderer::shadow_size()};
+        shadow_pass.layerCount = 1;
+        shadow_pass.pDepthAttachment = &shadow_depth;
+        vkCmdBeginRendering(frame.cmd, &shadow_pass);
+
+        VkViewport sun_viewport{};
+        sun_viewport.width = static_cast<f32>(gpu::Renderer::shadow_size());
+        sun_viewport.height = static_cast<f32>(gpu::Renderer::shadow_size());
+        sun_viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(frame.cmd, 0, 1, &sun_viewport);
+        VkRect2D sun_scissor{};
+        sun_scissor.extent = shadow_pass.renderArea.extent;
+        vkCmdSetScissor(frame.cmd, 0, 1, &sun_scissor);
+
+        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_level_pipeline_);
+        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_level_layout_,
+                                0, 1, &bindless_set_, 0, nullptr);
+        vkCmdBindIndexBuffer(frame.cmd, indices_.handle, 0, VK_INDEX_TYPE_UINT32);
+        ShadowLevelPush sp{};
+        for (u32 i = 0; i < 16; ++i) {
+            sp.sun_view_proj[i] = sun_view_proj.m[i];
+        }
+        sp.vbuf = vertices_.bindless_index;
+        vkCmdPushConstants(frame.cmd, shadow_level_layout_,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(sp), &sp);
+        vkCmdDrawIndexedIndirect(frame.cmd, indirect_.handle, 0, 1,
+                                 sizeof(VkDrawIndexedIndirectCommand));
+
+        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_mesh_pipeline_);
+        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_mesh_layout_,
+                                0, 1, &bindless_set_, 0, nullptr);
+        model_draw_shadow(models_->duck, frame.cmd, shadow_mesh_layout_, sun_view_proj,
+                          frame.slot);
+        model_draw_shadow(models_->sponza, frame.cmd, shadow_mesh_layout_, sun_view_proj,
+                          frame.slot);
+        model_draw_shadow(models_->fox.base, frame.cmd, shadow_mesh_layout_, sun_view_proj,
+                          frame.slot);
+        vkCmdEndRendering(frame.cmd);
+    }
+    shadow_barrier(frame.cmd, shadow_image_, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                   VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                   VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -335,6 +457,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         pc.view_proj[i] = view_proj.m[i];
     }
     pc.vbuf = vertices_.bindless_index;
+    pc.globals = models_->globals.bindless_index;
+    pc.gslot = frame.slot;
     vkCmdPushConstants(frame.cmd, layout_,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(PushConstants), &pc);
@@ -346,10 +470,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_);
     vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_layout_, 0, 1,
                             &bindless_set_, 0, nullptr);
-    model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, frame.slot);
-    model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, frame.slot);
-    model_draw_culled(models_->blob_shadow, frame.cmd, mesh_layout_, view_proj, frame.slot);
-    model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, frame.slot);
+    const u32 globals_idx = models_->globals.bindless_index;
+    model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, globals_idx, frame.slot);
+    model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, globals_idx,
+                      frame.slot);
+    model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, globals_idx,
+                      frame.slot);
     // The viewmodel draws into a compressed near slice of the depth range so
     // world geometry can never occlude it, the classic viewmodel depth hack.
     VkViewport vm_viewport{};
@@ -358,7 +484,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     vm_viewport.maxDepth = 0.05f;
     vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);
     const Mat4 vm_proj = perspective(1.05f, aspect, 0.05f, 10.0f);
-    model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, frame.slot);
+    model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, globals_idx,
+                      frame.slot);
     vm_viewport.maxDepth = 1.0f;
     vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);
 
