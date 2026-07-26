@@ -3,7 +3,8 @@ add_shaders(SCENE_SPV SOURCES
     ${CMAKE_SOURCE_DIR}/shaders/scene.vert
     ${CMAKE_SOURCE_DIR}/shaders/scene.frag
     ${CMAKE_SOURCE_DIR}/shaders/mesh.vert
-    ${CMAKE_SOURCE_DIR}/shaders/mesh.frag)
+    ${CMAKE_SOURCE_DIR}/shaders/mesh.frag
+    ${CMAKE_SOURCE_DIR}/shaders/cull.comp)
 add_custom_target(scene_shaders DEPENDS ${SCENE_SPV})
 
 add_library(render STATIC

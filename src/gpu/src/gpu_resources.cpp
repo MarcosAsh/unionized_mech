@@ -184,23 +184,61 @@ Buffer Renderer::create_device_buffer(const void* data, u64 size, VkBufferUsageF
     result.handle = device_buffer;
     result.size = size;
     if (storage_bindless) {
-        const u32 index = next_storage_index_++;
-        VkDescriptorBufferInfo info{};
-        info.buffer = device_buffer;
-        info.offset = 0;
-        info.range = VK_WHOLE_SIZE;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = bindless_set_;
-        write.dstBinding = 0;
-        write.dstArrayElement = index;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write.pBufferInfo = &info;
-        vkUpdateDescriptorSets(dev, 1, &write, 0, nullptr);
-        result.bindless_index = index;
+        result.bindless_index = register_storage_buffer(device_buffer);
     }
     return result;
+}
+
+u32 Renderer::register_storage_buffer(VkBuffer buffer) {
+    const u32 index = next_storage_index_++;
+    VkDescriptorBufferInfo info{};
+    info.buffer = buffer;
+    info.offset = 0;
+    info.range = VK_WHOLE_SIZE;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = bindless_set_;
+    write.dstBinding = 0;
+    write.dstArrayElement = index;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.pBufferInfo = &info;
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+    return index;
+}
+
+Buffer Renderer::create_gpu_buffer(u64 size, VkBufferUsageFlags usage) {
+    const VkDevice dev = device_->handle();
+    Allocation alloc{};
+    VkBuffer handle = create_buffer(dev, allocator_, size, usage | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &alloc);
+    ASSERT_MSG(owned_count_ < MAX_OWNED_BUFFERS, "too many owned buffers");
+    owned_buffers_[owned_count_++] = handle;
+
+    Buffer out;
+    out.handle = handle;
+    out.size = size;
+    out.bindless_index = register_storage_buffer(handle);
+    return out;
+}
+
+Buffer Renderer::create_mapped_buffer(u64 size, void** out_mapped) {
+    const VkDevice dev = device_->handle();
+    Allocation alloc{};
+    VkBuffer handle = create_buffer(dev, allocator_, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                    &alloc);
+    ASSERT(alloc.mapped != nullptr);
+    ASSERT_MSG(owned_count_ < MAX_OWNED_BUFFERS, "too many owned buffers");
+    owned_buffers_[owned_count_++] = handle;
+    *out_mapped = alloc.mapped;
+
+    Buffer out;
+    out.handle = handle;
+    out.size = size;
+    out.bindless_index = register_storage_buffer(handle);
+    return out;
 }
 
 Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {

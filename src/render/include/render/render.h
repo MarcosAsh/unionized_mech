@@ -41,6 +41,9 @@ private:
                                VkDescriptorSetLayout bindless_layout, const char* vert_spv,
                                const char* frag_spv, u32 push_bytes, VkPipeline* out_pipeline,
                                VkPipelineLayout* out_layout);
+    static void build_compute(VkDevice device, VkDescriptorSetLayout bindless_layout,
+                              const char* comp_spv, u32 push_bytes, VkPipeline* out_pipeline,
+                              VkPipelineLayout* out_layout);
     void build_pipelines();
     void destroy_pipelines();
 
@@ -49,6 +52,8 @@ private:
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout mesh_layout_ = VK_NULL_HANDLE;
+    VkPipeline cull_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout cull_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkFormat color_format_ = VK_FORMAT_UNDEFINED;

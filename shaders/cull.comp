@@ -1,0 +1,86 @@
+#version 450
+#extension GL_EXT_nonuniform_qualifier : require
+
+// Frustum culling. One thread per draw record: test the record's world-space
+// box against the view frustum, and append an indirect draw command for each
+// survivor. The record index rides in firstInstance so the vertex shader can
+// find its data.
+
+layout(local_size_x = 64) in;
+
+struct DrawRecord {
+    mat4 model;
+    vec4 rot;
+    vec4 color;
+    vec4 bounds_min;  // model-space box, w unused
+    vec4 bounds_max;
+    uint vbuf;
+    uint tex;
+    uint index_count;
+    uint first_index;
+};
+
+struct DrawCommand {
+    uint index_count;
+    uint instance_count;
+    uint first_index;
+    int vertex_offset;
+    uint first_instance;
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer Records {
+    DrawRecord r[];
+} records[];
+
+layout(std430, set = 0, binding = 0) buffer Commands {
+    DrawCommand c[];
+} commands[];
+
+layout(std430, set = 0, binding = 0) buffer Counts {
+    uint value[];
+} counts[];
+
+layout(push_constant) uniform Push {
+    vec4 planes[6];  // view frustum, inward-facing, normalized
+    uint draw_count;
+    uint records_buf;
+    uint records_base;   // this frame's slice of the record buffer
+    uint commands_buf;
+    uint commands_base;  // this frame's slice of the command buffer
+    uint count_buf;
+    uint count_slot;     // this frame's counter
+} pc;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= pc.draw_count) {
+        return;
+    }
+    DrawRecord rec = records[pc.records_buf].r[pc.records_base + id];
+
+    // World-space box of the model-space bounds: transform the extents through
+    // the absolute value of the rotation part, the standard AABB transform.
+    vec3 center_l = 0.5 * (rec.bounds_min.xyz + rec.bounds_max.xyz);
+    vec3 extent_l = 0.5 * (rec.bounds_max.xyz - rec.bounds_min.xyz);
+    vec3 center = (rec.model * vec4(center_l, 1.0)).xyz;
+    mat3 rot = mat3(rec.model);
+    vec3 extent = abs(rot[0]) * extent_l.x + abs(rot[1]) * extent_l.y + abs(rot[2]) * extent_l.z;
+
+    for (int i = 0; i < 6; ++i) {
+        vec4 plane = pc.planes[i];
+        float dist = dot(plane.xyz, center) + plane.w;
+        float radius = dot(abs(plane.xyz), extent);
+        if (dist + radius < 0.0) {
+            return;  // fully outside this plane
+        }
+    }
+
+    uint slot = atomicAdd(counts[pc.count_buf].value[pc.count_slot], 1u);
+    DrawCommand cmd;
+    cmd.index_count = rec.index_count;
+    cmd.instance_count = 1u;
+    cmd.first_index = rec.first_index;
+    cmd.vertex_offset = 0;
+    cmd.first_instance = id;  // carries the record index to the vertex shader
+    commands[pc.commands_buf].c[pc.commands_base + slot] = cmd;
+}

@@ -23,13 +23,14 @@ bool has_required_features(VkPhysicalDevice pd) {
     f2.pNext = &f12;
     vkGetPhysicalDeviceFeatures2(pd, &f2);
 
-    return f13.dynamicRendering && f13.synchronization2 && f13.shaderDemoteToHelperInvocation && f12.timelineSemaphore &&
-           f12.bufferDeviceAddress && f12.descriptorIndexing && f12.runtimeDescriptorArray &&
-           f12.descriptorBindingPartiallyBound &&
+    return f13.dynamicRendering && f13.synchronization2 && f13.shaderDemoteToHelperInvocation &&
+           f12.timelineSemaphore && f12.bufferDeviceAddress && f12.descriptorIndexing &&
+           f12.runtimeDescriptorArray && f12.descriptorBindingPartiallyBound &&
            f12.descriptorBindingSampledImageUpdateAfterBind &&
            f12.descriptorBindingStorageImageUpdateAfterBind &&
            f12.descriptorBindingStorageBufferUpdateAfterBind &&
-           f12.shaderSampledImageArrayNonUniformIndexing;
+           f12.shaderSampledImageArrayNonUniformIndexing && f12.shaderStorageBufferArrayNonUniformIndexing && f12.drawIndirectCount &&
+           f2.features.multiDrawIndirect && f2.features.drawIndirectFirstInstance;
 }
 
 // Prefer real GPUs. CPU (llvmpipe) scores zero and is rejected.
@@ -181,10 +182,16 @@ DeviceResult Device::create(const Instance& instance) {
     e12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
     e12.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
     e12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    e12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
+    // GPU-driven culling draws through vkCmdDrawIndexedIndirectCount, with the
+    // per-draw record index carried in firstInstance.
+    e12.drawIndirectCount = VK_TRUE;
 
     VkPhysicalDeviceFeatures2 e2{};
     e2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     e2.pNext = &e12;
+    e2.features.multiDrawIndirect = VK_TRUE;
+    e2.features.drawIndirectFirstInstance = VK_TRUE;
 
     const char* device_extensions[1] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 

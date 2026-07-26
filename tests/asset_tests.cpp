@@ -27,6 +27,8 @@ static void test_mesh_round_trip() {
     submeshes[0].index_count = 3;
     submeshes[0].texture = 0;
     submeshes[0].color[0] = 0.5f;
+    submeshes[0].bounds_min[1] = -2.0f;
+    submeshes[0].bounds_max[0] = 7.0f;
     submeshes[1].index_offset = 3;
     submeshes[1].index_count = 0;
     submeshes[1].texture = NO_TEXTURE;
@@ -55,6 +57,8 @@ static void test_mesh_round_trip() {
     ASSERT(back.submeshes[0].index_count == 3);
     ASSERT(back.submeshes[0].texture == 0);
     ASSERT(back.submeshes[0].color[0] == 0.5f);
+    ASSERT(back.submeshes[0].bounds_min[1] == -2.0f);
+    ASSERT(back.submeshes[0].bounds_max[0] == 7.0f);
     ASSERT(back.submeshes[1].texture == NO_TEXTURE);
 }
 

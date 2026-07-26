@@ -13,8 +13,44 @@ namespace render {
 
 using core::Mat4;
 using core::Vec3;
+using core::Vec4;
 using core::angle_lerp;
 using core::lerp;
+
+/// The six planes of a view frustum, inward-facing and normalized, as
+/// (normal.xyz, d) with dot(n, p) + d >= 0 for points inside.
+struct Frustum {
+    Vec4 planes[6];
+};
+
+/// Extract the frustum from a view-projection matrix (Gribb-Hartmann), for the
+/// Vulkan [0, 1] depth convention.
+[[nodiscard]] inline Frustum frustum_from(const Mat4& m) {
+    // Row r of the column-major matrix.
+    const auto row = [&m](u32 r) {
+        return Vec4{m.m[r], m.m[4 + r], m.m[8 + r], m.m[12 + r]};
+    };
+    const Vec4 r0 = row(0);
+    const Vec4 r1 = row(1);
+    const Vec4 r2 = row(2);
+    const Vec4 r3 = row(3);
+
+    Frustum out;
+    out.planes[0] = r3 + r0;  // left
+    out.planes[1] = r3 - r0;  // right
+    out.planes[2] = r3 + r1;  // bottom
+    out.planes[3] = r3 - r1;  // top
+    out.planes[4] = r2;       // near, depth >= 0
+    out.planes[5] = r3 - r2;  // far
+    for (u32 i = 0; i < 6; ++i) {
+        Vec4& p = out.planes[i];
+        const f32 len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (len > 0.0f) {
+            p = p * (1.0f / len);
+        }
+    }
+    return out;
+}
 
 /// Right-handed Vulkan perspective. Depth maps to [0, 1] and Y is flipped so
 /// the image is upright in Vulkan's coordinate system.

@@ -308,6 +308,30 @@ core::Result<Model, const char*> import_gltf(core::Arena& arena, const char* pat
                 sub.color[c] = mat->pbr_metallic_roughness.base_color_factor[c];
             }
         }
+
+        // Model-space bounds over the submesh's referenced vertices, for culling.
+        core::Vec3 lo{0.0f, 0.0f, 0.0f};
+        core::Vec3 hi{0.0f, 0.0f, 0.0f};
+        for (u64 k = 0; k < sub.index_count; ++k) {
+            const core::Vec3 p = writer.vertices[writer.indices[sub.index_offset + k]].pos;
+            if (k == 0) {
+                lo = p;
+                hi = p;
+                continue;
+            }
+            lo.x = p.x < lo.x ? p.x : lo.x;
+            lo.y = p.y < lo.y ? p.y : lo.y;
+            lo.z = p.z < lo.z ? p.z : lo.z;
+            hi.x = p.x > hi.x ? p.x : hi.x;
+            hi.y = p.y > hi.y ? p.y : hi.y;
+            hi.z = p.z > hi.z ? p.z : hi.z;
+        }
+        sub.bounds_min[0] = lo.x;
+        sub.bounds_min[1] = lo.y;
+        sub.bounds_min[2] = lo.z;
+        sub.bounds_max[0] = hi.x;
+        sub.bounds_max[1] = hi.y;
+        sub.bounds_max[2] = hi.z;
     }
 
     Model model;

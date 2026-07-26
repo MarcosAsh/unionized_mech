@@ -91,6 +91,7 @@ Frame Renderer::begin_frame(u32 width, u32 height) {
     frame.color_view = views_[image_index];
     frame.depth_view = depth_view_;
     frame.extent = extent_;
+    frame.slot = slot;
     frame.valid = true;
     return frame;
 }

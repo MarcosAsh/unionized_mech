@@ -24,7 +24,7 @@ struct TextureHeader {
     u32 height;
 };
 
-constexpr u32 MESH_MAGIC = 0x32534D55u;  // "UMS2" little-endian
+constexpr u32 MESH_MAGIC = 0x33534D55u;  // "UMS3" little-endian
 constexpr u32 TEX_MAGIC = 0x58544D55u;   // "UMTX" little-endian
 
 }  // namespace

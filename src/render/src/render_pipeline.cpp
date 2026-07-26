@@ -139,15 +139,49 @@ void Scene::build_pipeline(VkDevice device, VkFormat color_format, VkFormat dept
     vkDestroyShaderModule(device, frag, nullptr);
 }
 
+void Scene::build_compute(VkDevice device, VkDescriptorSetLayout bindless_layout,
+                          const char* comp_spv, u32 push_bytes, VkPipeline* out_pipeline,
+                          VkPipelineLayout* out_layout) {
+    const VkShaderModule comp = load_shader_module(device, comp_spv);
+
+    VkPushConstantRange push{};
+    push.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    push.size = push_bytes;
+
+    VkPipelineLayoutCreateInfo layout_ci{};
+    layout_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_ci.setLayoutCount = 1;
+    layout_ci.pSetLayouts = &bindless_layout;
+    layout_ci.pushConstantRangeCount = 1;
+    layout_ci.pPushConstantRanges = &push;
+    ASSERT_MSG(vkCreatePipelineLayout(device, &layout_ci, nullptr, out_layout) == VK_SUCCESS,
+               "compute pipeline layout");
+
+    VkComputePipelineCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = comp;
+    ci.stage.pName = "main";
+    ci.layout = *out_layout;
+    ASSERT_MSG(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, out_pipeline) ==
+                   VK_SUCCESS,
+               "vkCreateComputePipelines");
+
+    vkDestroyShaderModule(device, comp, nullptr);
+}
+
 void Scene::build_pipelines() {
-    // Push sizes match the shaders: scene is mvp + buffer index, mesh adds a
-    // rotation quat and a texture index.
+    // Push sizes match the shaders: the level pass takes mvp plus a buffer
+    // index, the mesh pass reads per-draw records, the cull pass fills them.
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/scene.vert.spv", SHADER_DIR "/scene.frag.spv",
                    sizeof(f32) * 16 + sizeof(u32), &pipeline_, &layout_);
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/mesh.frag.spv", sizeof(MeshPush),
                    &mesh_pipeline_, &mesh_layout_);
+    build_compute(device_, bindless_layout_, SHADER_DIR "/cull.comp.spv", sizeof(CullPush),
+                  &cull_pipeline_, &cull_layout_);
 }
 
 void Scene::destroy_pipelines() {
@@ -155,6 +189,8 @@ void Scene::destroy_pipelines() {
     vkDestroyPipelineLayout(device_, layout_, nullptr);
     vkDestroyPipeline(device_, mesh_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, mesh_layout_, nullptr);
+    vkDestroyPipeline(device_, cull_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, cull_layout_, nullptr);
 }
 
 }  // namespace render

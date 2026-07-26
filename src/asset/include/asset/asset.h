@@ -20,17 +20,20 @@ struct MeshVertex {
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex layout must stay file-stable");
 
 /// A contiguous index range drawn with one material. `texture` indexes the
-/// model's texture list, or NO_TEXTURE when the material is untextured.
+/// model's texture list, or NO_TEXTURE when the material is untextured. The
+/// bounds are the submesh's model-space box, used for culling.
 struct Submesh {
     u32 index_offset = 0;
     u32 index_count = 0;
     u32 texture = 0xFFFFFFFFu;
     f32 color[4] = {1.0f, 1.0f, 1.0f, 1.0f};  ///< Base color factor.
+    f32 bounds_min[3] = {0.0f, 0.0f, 0.0f};
+    f32 bounds_max[3] = {0.0f, 0.0f, 0.0f};
 };
 
 constexpr u32 NO_TEXTURE = 0xFFFFFFFFu;
 
-static_assert(sizeof(Submesh) == 28, "Submesh layout must stay file-stable");
+static_assert(sizeof(Submesh) == 52, "Submesh layout must stay file-stable");
 
 /// Triangle mesh data in engine layout: one vertex and index pool, drawn as
 /// per-material submesh ranges.

@@ -43,6 +43,22 @@ constexpr DuckSpot DUCKS[3] = {
 // main walls live in sim's level so it is walkable and wallrunnable.
 constexpr core::Vec3 SPONZA_POS{0.0f, 0.0f, -90.0f};
 
+// A global execution and memory barrier between the cull pre-pass stages.
+void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
+                    VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access) {
+    VkMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = src_stage;
+    barrier.srcAccessMask = src_access;
+    barrier.dstStageMask = dst_stage;
+    barrier.dstAccessMask = dst_access;
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.memoryBarrierCount = 1;
+    dep.pMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(cmd, &dep);
+}
+
 i64 file_mtime(const char* path) {
     struct stat st;
     if (stat(path, &st) != 0) {
@@ -243,6 +259,47 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const Mat4 view = view_fps(cam_x, cam_y + eye_height, cam_z, yaw, pitch, cur_roll_);
     const Mat4 view_proj = proj * view;
 
+    // Cull pre-pass, before the rendering pass begins: queue this frame's draw
+    // records, zero the survivor counters, and let compute build the indirect
+    // command buffers from whatever the frustum keeps.
+    model_begin(models_->duck);
+    model_begin(models_->sponza);
+    for (const DuckSpot& spot : DUCKS) {
+        const f32 half = spot.yaw * 0.5f;
+        const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
+                                                          std::sin(half), std::cos(half));
+        model_queue(models_->duck, frame.slot, spot.pos, rot, spot.scale);
+    }
+    model_queue(models_->sponza, frame.slot, SPONZA_POS, core::Quat{}, 1.0f);
+
+    const RenderModel* fill_models[2] = {&models_->duck, &models_->sponza};
+    for (u32 i = 0; i < 2; ++i) {
+        if (fill_models[i]->loaded) {
+            vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
+                            static_cast<u64>(frame.slot) * sizeof(u32), sizeof(u32), 0);
+        }
+    }
+    memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                   VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+
+    const Frustum frustum = frustum_from(view_proj);
+    f32 planes[6][4];
+    for (u32 i = 0; i < 6; ++i) {
+        planes[i][0] = frustum.planes[i].x;
+        planes[i][1] = frustum.planes[i].y;
+        planes[i][2] = frustum.planes[i].z;
+        planes[i][3] = frustum.planes[i].w;
+    }
+    model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot);
+    model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot);
+    memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                   VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                   VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+                   VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     color.imageView = frame.color_view;
@@ -295,18 +352,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     vkCmdDrawIndexedIndirect(frame.cmd, indirect_.handle, 0, 1,
                              sizeof(VkDrawIndexedIndirectCommand));
 
-    // The textured mesh pass: imported models.
+    // The textured mesh pass draws whatever the cull pass kept.
     vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_);
     vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_layout_, 0, 1,
                             &bindless_set_, 0, nullptr);
-    for (const DuckSpot& spot : DUCKS) {
-        const f32 half = spot.yaw * 0.5f;
-        const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
-                                                          std::sin(half), std::cos(half));
-        model_draw(models_->duck, frame.cmd, mesh_layout_, view_proj, spot.pos, rot, spot.scale);
-    }
-    model_draw(models_->sponza, frame.cmd, mesh_layout_, view_proj, SPONZA_POS, core::Quat{},
-               1.0f);
+    model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, frame.slot);
+    model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, frame.slot);
 
     vkCmdEndRendering(frame.cmd);
 }
