@@ -317,16 +317,19 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         if (shooter.alive == 0 || shooter.shot_age > 2) {
             continue;
         }
-        const f32 scp = std::cos(shooter.pitch);
-        const core::Vec3 dir{std::sin(shooter.yaw) * scp, std::sin(shooter.pitch),
-                             -std::cos(shooter.yaw) * scp};
-        core::Vec3 origin{shooter.x, shooter.y + 1.6f, shooter.z};
+        // Fire-time data, frozen by the sim, so the beam stays where the shot
+        // actually went while the shooter keeps moving and turning.
+        const f32 scp = std::cos(shooter.shot_pitch);
+        const core::Vec3 dir{std::sin(shooter.shot_yaw) * scp, std::sin(shooter.shot_pitch),
+                             -std::cos(shooter.shot_yaw) * scp};
+        core::Vec3 origin{shooter.shot_x, shooter.shot_y, shooter.shot_z};
         if (i == 0) {
-            const core::Vec3 s_right{std::cos(shooter.yaw), 0.0f, std::sin(shooter.yaw)};
+            const core::Vec3 s_right{std::cos(shooter.shot_yaw), 0.0f,
+                                     std::sin(shooter.shot_yaw)};
             origin += s_right * 0.17f + dir * 0.5f + core::Vec3{0.0f, -0.12f, 0.0f};
         }
-        const f32 beam_pitch = std::asin(dir.y > 1.0f ? 1.0f : (dir.y < -1.0f ? -1.0f : dir.y));
-        const f32 beam_yaw = std::atan2(dir.x, -dir.z);
+        const f32 beam_pitch = shooter.shot_pitch;
+        const f32 beam_yaw = shooter.shot_yaw;
         const core::Quat q_yaw = core::Quat::from_axis_half(
             core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(beam_yaw * 0.5f), std::cos(beam_yaw * 0.5f));
         const core::Quat q_pitch = core::Quat::from_axis_half(

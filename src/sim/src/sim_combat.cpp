@@ -119,6 +119,11 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
             }
         }
         shooter.last_shot_t = best_t;
+        shooter.shot_x = ox;
+        shooter.shot_y = oy;
+        shooter.shot_z = oz;
+        shooter.shot_yaw = shooter.yaw;
+        shooter.shot_pitch = shooter.pitch;
         shooter.shot_age = 0;
         shooter.shot_hit = hit >= 0 ? 1 : 0;
         if (hit >= 0) {

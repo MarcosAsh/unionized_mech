@@ -37,3 +37,9 @@ cbox -15.4 0 -83.8 14.4 12 -81.2
 cbox -15.4 0 -99.5 14.4 12 -96.2
 cbox -15.4 0 -99.5 -13 12 -81.2
 cbox 13 0 -99.5 14.4 12 -81.2
+
+# Perimeter: nobody leaves the arena, and the walls are tall enough to run on
+cbox -100 0 -100 100 40 -99
+cbox -100 0 99 100 40 100
+cbox -100 0 -100 -99 40 100
+cbox 99 0 -100 100 40 100

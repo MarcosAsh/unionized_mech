@@ -89,6 +89,11 @@ struct Character {
     f32 wall_nz = 0.0f;
     f32 land_impact = 0.0f;  ///< Fall speed at the last landing, decaying.
     f32 last_shot_t = 0.0f;  ///< Distance the last shot travelled.
+    f32 shot_x = 0.0f;       ///< Fire-time eye position of the last shot.
+    f32 shot_y = 0.0f;
+    f32 shot_z = 0.0f;
+    f32 shot_yaw = 0.0f;     ///< Fire-time aim of the last shot.
+    f32 shot_pitch = 0.0f;
     u16 wallrun_ticks = 0;   ///< Ticks spent on the current wall.
     u16 respawn_ticks = 0;   ///< Ticks until respawn while dead.
     u16 kills = 0;
@@ -107,7 +112,7 @@ struct Character {
     u8 shot_hit = 0;       ///< 1 when the last shot damaged someone.
 };
 
-static_assert(sizeof(Character) == 68, "Character layout must stay packed for hashing");
+static_assert(sizeof(Character) == 88, "Character layout must stay packed for hashing");
 
 /// The whole simulation state: the match. Trivially copyable so it can be
 /// snapshotted and hashed by value. Slot 0 is the player; bot inputs are
