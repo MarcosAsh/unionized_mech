@@ -55,6 +55,9 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 /// Four diagonal hit-marker ticks around the screen centre, camera space.
 [[nodiscard]] RenderModel make_hitmarker(gpu::Renderer& gpu, u32 fallback_texture);
 
+/// A full-screen quad in NDC for the overlay pass, tinted at queue time.
+[[nodiscard]] RenderModel make_overlay_quad(gpu::Renderer& gpu, u32 fallback_texture);
+
 /// The fox companion's steering state, advanced per frame on the render side.
 struct FoxCompanion {
     f32 x = 6.0f;

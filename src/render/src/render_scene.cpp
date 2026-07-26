@@ -62,6 +62,7 @@ struct SceneModels {
     RenderModel trooper;
     RenderModel tracer;
     RenderModel hitmarker;
+    RenderModel overlay;
     FoxCompanion fox_state;
     gpu::Blas level_blas;
     gpu::Blas trooper_blas;
@@ -124,6 +125,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
     scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
     scene.models_->hitmarker = make_hitmarker(gpu, scene.models_->white_texture);
+    scene.models_->overlay = make_overlay_quad(gpu, scene.models_->white_texture);
 
     // On ray tracing hardware, every caster gets a BLAS and the sun shadows
     // trace against the scene instead of sampling the shadow map. The fox BLAS
@@ -267,6 +269,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->trooper);
     model_begin(models_->tracer);
     model_begin(models_->hitmarker);
+    model_begin(models_->overlay);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
@@ -317,19 +320,33 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         if (shooter.alive == 0 || shooter.shot_age > 2) {
             continue;
         }
-        // Fire-time data, frozen by the sim, so the beam stays where the shot
-        // actually went while the shooter keeps moving and turning.
+        // The impact point is frozen at fire time; the player's beam origin
+        // tracks the gun muzzle like the gun itself, so the tracer visually
+        // leaves the barrel then converges on the true shot line.
         const f32 scp = std::cos(shooter.shot_pitch);
-        const core::Vec3 dir{std::sin(shooter.shot_yaw) * scp, std::sin(shooter.shot_pitch),
-                             -std::cos(shooter.shot_yaw) * scp};
-        core::Vec3 origin{shooter.shot_x, shooter.shot_y, shooter.shot_z};
+        const core::Vec3 shot_dir{std::sin(shooter.shot_yaw) * scp, std::sin(shooter.shot_pitch),
+                                  -std::cos(shooter.shot_yaw) * scp};
+        const core::Vec3 impact = core::Vec3{shooter.shot_x, shooter.shot_y, shooter.shot_z} +
+                                  shot_dir * shooter.last_shot_t;
+        core::Vec3 origin;
         if (i == 0) {
-            const core::Vec3 s_right{std::cos(shooter.shot_yaw), 0.0f,
-                                     std::sin(shooter.shot_yaw)};
-            origin += s_right * 0.17f + dir * 0.5f + core::Vec3{0.0f, -0.12f, 0.0f};
+            const f32 ccp = std::cos(pitch);
+            const core::Vec3 cam_dir{std::sin(yaw) * ccp, std::sin(pitch), -std::cos(yaw) * ccp};
+            const core::Vec3 cam_right{std::cos(yaw), 0.0f, std::sin(yaw)};
+            origin = core::Vec3{cam_x, cam_y + eye_height, cam_z} + cam_right * 0.17f +
+                     cam_dir * 0.5f + core::Vec3{0.0f, -0.12f, 0.0f};
+        } else {
+            origin = core::Vec3{shooter.shot_x, shooter.shot_y, shooter.shot_z};
         }
-        const f32 beam_pitch = shooter.shot_pitch;
-        const f32 beam_yaw = shooter.shot_yaw;
+        const core::Vec3 span = impact - origin;
+        const f32 beam_len = span.length();
+        if (beam_len < 0.1f) {
+            continue;
+        }
+        const core::Vec3 dir = span * (1.0f / beam_len);
+        const f32 beam_pitch =
+            std::asin(dir.y > 1.0f ? 1.0f : (dir.y < -1.0f ? -1.0f : dir.y));
+        const f32 beam_yaw = std::atan2(dir.x, -dir.z);
         const core::Quat q_yaw = core::Quat::from_axis_half(
             core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(beam_yaw * 0.5f), std::cos(beam_yaw * 0.5f));
         const core::Quat q_pitch = core::Quat::from_axis_half(
@@ -338,7 +355,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         const f32 fade[4] = {1.0f - 0.3f * static_cast<f32>(shooter.shot_age),
                              1.0f - 0.3f * static_cast<f32>(shooter.shot_age), 1.0f, 1.0f};
         model_queue_stretched(models_->tracer, frame.slot, origin, q_yaw * q_pitch,
-                              core::Vec3{0.02f, 0.02f, shooter.last_shot_t}, fade);
+                              core::Vec3{0.02f, 0.02f, beam_len}, fade);
     }
 
     // The first-person viewmodel lives in camera space and is drawn with its
@@ -353,6 +370,23 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     if (curr.player().shot_hit != 0 && curr.player().shot_age < 8) {
         model_queue(models_->hitmarker, frame.slot, core::Vec3{0.0f, 0.0f, -1.2f}, core::Quat{},
                     1.0f);
+    }
+
+    // Screen feedback: a red flash when hurt, a dark red shroud while dead,
+    // and the match banner tint during the end phase.
+    if (curr.player().alive != 0 && curr.player().hurt_age < 12) {
+        const f32 a = 0.38f * (1.0f - static_cast<f32>(curr.player().hurt_age) / 12.0f);
+        const f32 tint[4] = {0.9f, 0.08f, 0.08f, a};
+        model_queue_tinted(models_->overlay, frame.slot, core::Vec3{}, core::Quat{}, 1.0f, tint);
+    }
+    if (curr.player().alive == 0) {
+        const f32 tint[4] = {0.35f, 0.02f, 0.02f, 0.5f};
+        model_queue_tinted(models_->overlay, frame.slot, core::Vec3{}, core::Quat{}, 1.0f, tint);
+    }
+    if (curr.winner != 0) {
+        const bool won = (curr.winner - 1) == curr.player().team;
+        const f32 tint[4] = {won ? 0.1f : 0.6f, won ? 0.5f : 0.08f, 0.12f, 0.28f};
+        model_queue_tinted(models_->overlay, frame.slot, core::Vec3{}, core::Quat{}, 1.0f, tint);
     }
 
     // The sun volume follows the camera: a tight orthographic box gives dense
@@ -381,11 +415,11 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[7] = {&models_->duck,      &models_->sponza,
+    const RenderModel* fill_models[8] = {&models_->duck,      &models_->sponza,
                                          &models_->fox.base,  &models_->viewmodel,
                                          &models_->trooper,   &models_->tracer,
-                                         &models_->hitmarker};
-    for (u32 i = 0; i < 7; ++i) {
+                                         &models_->hitmarker, &models_->overlay};
+    for (u32 i = 0; i < 8; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -423,6 +457,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_cull(models_->tracer, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->hitmarker, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_CAMERA);
+    model_cull(models_->overlay, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
     // Shadow casters are culled permissively: the sun sees the whole map.
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
@@ -591,6 +627,13 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->hitmarker, frame.cmd, mesh_layout_, vm_proj, globals_idx,
+                      frame.slot);
+
+    // The overlay pass draws last: unlit, blended, in NDC.
+    vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlay_pipeline_);
+    vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlay_layout_, 0, 1,
+                            &bindless_set_, 0, nullptr);
+    model_draw_culled(models_->overlay, frame.cmd, overlay_layout_, Mat4{}, globals_idx,
                       frame.slot);
     vm_viewport.maxDepth = 1.0f;
     vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);

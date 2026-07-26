@@ -165,12 +165,16 @@ int main(int argc, char** argv) {
                                static_cast<f64>(me.vz) * static_cast<f64>(me.vz);
             const char* state_names[5] = {"ground", "slide", "air", "wallrun", "climb"};
             core::log_infof(
-                "t=%.0fs fps=%.0f gpu=%.2fms speed=%.1f %s  hp=%d kills=%u",
+                "t=%.0fs fps=%.0f gpu=%.2fms speed=%.1f %s  hp=%d kills=%u  blue %u : %u orange%s",
                 static_cast<f64>(now_ns - start_ns) * 1e-9,
                 static_cast<f64>(frames - frames_at_report) / dt,
                 static_cast<f64>(renderer.last_gpu_ms()), __builtin_sqrt(hspeed),
                 state_names[static_cast<u8>(me.state) < 5 ? static_cast<u8>(me.state) : 2],
-                static_cast<int>(me.health), static_cast<unsigned>(me.kills));
+                static_cast<int>(me.health), static_cast<unsigned>(me.kills),
+                static_cast<unsigned>(sim::team_kills(curr_world, 0)),
+                static_cast<unsigned>(sim::team_kills(curr_world, 1)),
+                curr_world.winner == 0 ? ""
+                                       : (curr_world.winner == 1 ? "  BLUE WINS" : "  ORANGE WINS"));
             (void)cpu_ms;
             (void)ticks_at_report;
             report_ns = now_ns;

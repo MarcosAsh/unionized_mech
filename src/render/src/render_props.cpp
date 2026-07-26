@@ -229,6 +229,30 @@ RenderModel make_hitmarker(gpu::Renderer& gpu, u32 fallback_texture) {
     return model_from_data(gpu, mesh, fallback_texture);
 }
 
+RenderModel make_overlay_quad(gpu::Renderer& gpu, u32 fallback_texture) {
+    static asset::MeshVertex verts[4];
+    static u32 indices[6] = {0, 1, 2, 0, 2, 3};
+    const f32 xs[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
+    const f32 ys[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+    for (u32 i = 0; i < 4; ++i) {
+        verts[i].pos = core::Vec3{xs[i], ys[i], 0.0f};
+        verts[i].normal = core::Vec3{0.0f, 0.0f, 1.0f};
+    }
+    static asset::Submesh sub;
+    sub.index_count = 6;
+    sub.texture = asset::NO_TEXTURE;
+    for (u32 c = 0; c < 4; ++c) {
+        sub.color[c] = 1.0f;
+        sub.bounds_min[c % 3] = -1.0f;
+        sub.bounds_max[c % 3] = 1.0f;
+    }
+    asset::MeshData mesh;
+    mesh.vertices = core::Span<const asset::MeshVertex>(verts, 4);
+    mesh.indices = core::Span<const u32>(indices, 6);
+    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
+    return model_from_data(gpu, mesh, fallback_texture);
+}
+
 RenderModel make_trooper(gpu::Renderer& gpu, u32 fallback_texture) {
     // Legs, torso, head, and a visor stripe. Near-white so the team tint reads.
     static asset::MeshVertex verts[4 * 24];

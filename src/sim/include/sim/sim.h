@@ -110,16 +110,26 @@ struct Character {
     u8 fire_cooldown = 0;  ///< Ticks until the weapon can fire again.
     u8 shot_age = 255;     ///< Ticks since this character last fired, saturating.
     u8 shot_hit = 0;       ///< 1 when the last shot damaged someone.
+    u8 hurt_age = 255;     ///< Ticks since this character was last damaged.
+    u8 pad0 = 0;
+    u8 pad1 = 0;
+    u8 pad2 = 0;
 };
 
-static_assert(sizeof(Character) == 88, "Character layout must stay packed for hashing");
+static_assert(sizeof(Character) == 92, "Character layout must stay packed for hashing");
 
 /// The whole simulation state: the match. Trivially copyable so it can be
 /// snapshotted and hashed by value. Slot 0 is the player; bot inputs are
 /// generated inside simulate from this state, deterministically.
+/// Kills a team needs to win the match.
+constexpr u32 WIN_KILLS = 30;
+
 struct World {
     TickId tick;
     u32 seed = 0x4d454348u;  ///< Feeds every in-simulation random choice.
+    u16 end_ticks = 0;  ///< Countdown of the end-of-match banner phase.
+    u8 winner = 0;      ///< 0 none, otherwise winning team + 1.
+    u8 pad = 0;
     Character chars[MAX_PLAYERS];
 
     /// The local player's character.
@@ -186,6 +196,9 @@ void simulate(const World& prev, const InputCmd& cmd, World& next);
 /// A 64-bit hash of the world state, stable across platforms. Used by the
 /// determinism harness and, later, by the server.
 [[nodiscard]] u64 hash(const World& w);
+
+/// A team's total kills.
+[[nodiscard]] u32 team_kills(const World& w, u32 team);
 
 /// Write an input tape: the exact InputCmd sequence of a run, replayable for
 /// the determinism harness and, later, for server-side verification.

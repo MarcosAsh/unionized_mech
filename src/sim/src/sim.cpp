@@ -49,13 +49,44 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
             step_character(next.chars[i], prev.chars[i], cmds[i]);
         }
     }
+
+    // During the end-of-match banner the fighting stops; when the countdown
+    // runs out a fresh match starts with a shifted seed for variety.
+    if (next.winner != 0) {
+        if (next.end_ticks > 0) {
+            next.end_ticks -= 1;
+        } else {
+            const u32 seed = next.seed + 1;
+            const TickId tick = next.tick;
+            init_match(next);
+            next.seed = seed;
+            next.tick = tick;
+        }
+        return;
+    }
     resolve_combat(next, fired);
+    for (u32 team = 0; team < 2; ++team) {
+        if (team_kills(next, team) >= WIN_KILLS) {
+            next.winner = static_cast<u8>(team + 1);
+            next.end_ticks = 600;  // ten seconds of banner
+        }
+    }
 }
 
 u64 hash(const World& w) {
     // Character is asserted padding-free, so the world hashes byte-wise.
-    static_assert(sizeof(World) == 8 + sizeof(Character) * MAX_PLAYERS);
+    static_assert(sizeof(World) == 12 + sizeof(Character) * MAX_PLAYERS);
     return fnv1a(0xcbf29ce484222325ull, &w, sizeof(World));
+}
+
+u32 team_kills(const World& w, u32 team) {
+    u32 total = 0;
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        if (w.chars[i].team == team) {
+            total += w.chars[i].kills;
+        }
+    }
+    return total;
 }
 
 u32 FixedTimestep::advance(f64 elapsed, u32 max_ticks) {

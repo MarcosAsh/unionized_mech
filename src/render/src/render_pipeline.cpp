@@ -39,8 +39,8 @@ VkShaderModule load_shader_module(VkDevice device, const char* path) {
 
 void Scene::build_pipeline(VkDevice device, VkFormat color_format, VkFormat depth_format,
                            VkDescriptorSetLayout bindless_layout, const char* vert_spv,
-                           const char* frag_spv, u32 push_bytes, VkPipeline* out_pipeline,
-                           VkPipelineLayout* out_layout) {
+                           const char* frag_spv, u32 push_bytes, bool overlay,
+                           VkPipeline* out_pipeline, VkPipelineLayout* out_layout) {
     const VkShaderModule vert = load_shader_module(device, vert_spv);
     const VkShaderModule frag = load_shader_module(device, frag_spv);
 
@@ -77,15 +77,25 @@ void Scene::build_pipeline(VkDevice device, VkFormat color_format, VkFormat dept
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    // Overlay draws are unoccluded and translucent; world draws are opaque.
     VkPipelineDepthStencilStateCreateInfo depth{};
     depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth.depthTestEnable = VK_TRUE;
-    depth.depthWriteEnable = VK_TRUE;
+    depth.depthTestEnable = overlay ? VK_FALSE : VK_TRUE;
+    depth.depthWriteEnable = overlay ? VK_FALSE : VK_TRUE;
     depth.depthCompareOp = VK_COMPARE_OP_LESS;
 
     VkPipelineColorBlendAttachmentState blend_attachment{};
     blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    if (overlay) {
+        blend_attachment.blendEnable = VK_TRUE;
+        blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+        blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    }
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     blend.attachmentCount = 1;
@@ -264,11 +274,14 @@ void Scene::build_pipelines() {
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/scene.vert.spv",
                    rt_ ? SHADER_DIR "/scene_rt.frag.spv" : SHADER_DIR "/scene.frag.spv",
-                   sizeof(f32) * 16 + sizeof(u32) * 3, &pipeline_, &layout_);
+                   sizeof(f32) * 16 + sizeof(u32) * 3, false, &pipeline_, &layout_);
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/mesh.vert.spv",
                    rt_ ? SHADER_DIR "/mesh_rt.frag.spv" : SHADER_DIR "/mesh.frag.spv",
-                   sizeof(MeshPush), &mesh_pipeline_, &mesh_layout_);
+                   sizeof(MeshPush), false, &mesh_pipeline_, &mesh_layout_);
+    build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
+                   SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/overlay.frag.spv",
+                   sizeof(MeshPush), true, &overlay_pipeline_, &overlay_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/cull.comp.spv", sizeof(CullPush),
                   &cull_pipeline_, &cull_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/skin.comp.spv", sizeof(SkinPush),
@@ -294,6 +307,8 @@ void Scene::destroy_pipelines() {
     vkDestroyPipelineLayout(device_, shadow_level_layout_, nullptr);
     vkDestroyPipeline(device_, shadow_mesh_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, shadow_mesh_layout_, nullptr);
+    vkDestroyPipeline(device_, overlay_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, overlay_layout_, nullptr);
 }
 
 }  // namespace render

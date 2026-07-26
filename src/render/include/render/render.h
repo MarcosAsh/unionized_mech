@@ -43,8 +43,8 @@ private:
 
     static void build_pipeline(VkDevice device, VkFormat color_format, VkFormat depth_format,
                                VkDescriptorSetLayout bindless_layout, const char* vert_spv,
-                               const char* frag_spv, u32 push_bytes, VkPipeline* out_pipeline,
-                               VkPipelineLayout* out_layout);
+                               const char* frag_spv, u32 push_bytes, bool overlay,
+                               VkPipeline* out_pipeline, VkPipelineLayout* out_layout);
     static void build_compute(VkDevice device, VkDescriptorSetLayout bindless_layout,
                               const char* comp_spv, u32 push_bytes, VkPipeline* out_pipeline,
                               VkPipelineLayout* out_layout);
@@ -68,6 +68,8 @@ private:
     VkPipelineLayout shadow_level_layout_ = VK_NULL_HANDLE;
     VkPipeline shadow_mesh_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout shadow_mesh_layout_ = VK_NULL_HANDLE;
+    VkPipeline overlay_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout overlay_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkFormat color_format_ = VK_FORMAT_UNDEFINED;

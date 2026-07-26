@@ -129,6 +129,7 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         if (hit >= 0) {
             Character& target = next.chars[hit];
             target.health = static_cast<i16>(target.health - SHOT_DAMAGE);
+            target.hurt_age = 0;
             if (target.health <= 0) {
                 target.alive = 0;
                 target.respawn_ticks = RESPAWN_TICKS;
