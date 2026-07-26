@@ -4,6 +4,7 @@
 #include "render_math.h"
 #include "render_model.h"
 #include "render_props.h"
+#include "render_sun.h"
 
 #include "core/array.h"
 #include "core/log.h"
@@ -24,10 +25,6 @@ struct PushConstants {
     u32 gslot;
 };
 
-struct ShadowLevelPush {
-    f32 sun_view_proj[16];
-    u32 vbuf;
-};
 
 // A global execution and memory barrier between the cull pre-pass stages.
 void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
@@ -42,30 +39,6 @@ void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAcce
     dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dep.memoryBarrierCount = 1;
     dep.pMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd, &dep);
-}
-
-// A depth image layout transition for the shadow pass.
-void shadow_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout,
-                    VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,
-                    VkAccessFlags2 src_access, VkPipelineStageFlags2 dst_stage,
-                    VkAccessFlags2 dst_access) {
-    VkImageMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = src_stage;
-    barrier.srcAccessMask = src_access;
-    barrier.dstStageMask = dst_stage;
-    barrier.dstAccessMask = dst_access;
-    barrier.oldLayout = old_layout;
-    barrier.newLayout = new_layout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.imageMemoryBarrierCount = 1;
-    dep.pImageMemoryBarriers = &barrier;
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
@@ -345,72 +318,25 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
                    VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
 
-    // The sun shadow pass: depth only, from the sun's orthographic view. The
-    // previous frame's read finished before this slot was reacquired, so the
-    // transition can come from undefined.
-    shadow_barrier(frame.cmd, shadow_image_, VK_IMAGE_LAYOUT_UNDEFINED,
-                   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
-                   VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                       VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                   VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-    {
-        VkRenderingAttachmentInfo shadow_depth{};
-        shadow_depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        shadow_depth.imageView = shadow_view_;
-        shadow_depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        shadow_depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        shadow_depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        shadow_depth.clearValue.depthStencil = {1.0f, 0};
-
-        VkRenderingInfo shadow_pass{};
-        shadow_pass.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        shadow_pass.renderArea.extent = {gpu::Renderer::shadow_size(),
-                                         gpu::Renderer::shadow_size()};
-        shadow_pass.layerCount = 1;
-        shadow_pass.pDepthAttachment = &shadow_depth;
-        vkCmdBeginRendering(frame.cmd, &shadow_pass);
-
-        VkViewport sun_viewport{};
-        sun_viewport.width = static_cast<f32>(gpu::Renderer::shadow_size());
-        sun_viewport.height = static_cast<f32>(gpu::Renderer::shadow_size());
-        sun_viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(frame.cmd, 0, 1, &sun_viewport);
-        VkRect2D sun_scissor{};
-        sun_scissor.extent = shadow_pass.renderArea.extent;
-        vkCmdSetScissor(frame.cmd, 0, 1, &sun_scissor);
-
-        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_level_pipeline_);
-        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_level_layout_,
-                                0, 1, &bindless_set_, 0, nullptr);
-        vkCmdBindIndexBuffer(frame.cmd, indices_.handle, 0, VK_INDEX_TYPE_UINT32);
-        ShadowLevelPush sp{};
-        for (u32 i = 0; i < 16; ++i) {
-            sp.sun_view_proj[i] = sun_view_proj.m[i];
-        }
-        sp.vbuf = vertices_.bindless_index;
-        vkCmdPushConstants(frame.cmd, shadow_level_layout_,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(sp), &sp);
-        vkCmdDrawIndexedIndirect(frame.cmd, indirect_.handle, 0, 1,
-                                 sizeof(VkDrawIndexedIndirectCommand));
-
-        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_mesh_pipeline_);
-        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_mesh_layout_,
-                                0, 1, &bindless_set_, 0, nullptr);
-        model_draw_shadow(models_->duck, frame.cmd, shadow_mesh_layout_, sun_view_proj,
-                          frame.slot);
-        model_draw_shadow(models_->sponza, frame.cmd, shadow_mesh_layout_, sun_view_proj,
-                          frame.slot);
-        model_draw_shadow(models_->fox.base, frame.cmd, shadow_mesh_layout_, sun_view_proj,
-                          frame.slot);
-        vkCmdEndRendering(frame.cmd);
-    }
-    shadow_barrier(frame.cmd, shadow_image_, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                   VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                   VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    SunShadowInputs sun_in;
+    sun_in.cmd = frame.cmd;
+    sun_in.image = shadow_image_;
+    sun_in.view = shadow_view_;
+    sun_in.level_pipeline = shadow_level_pipeline_;
+    sun_in.level_layout = shadow_level_layout_;
+    sun_in.mesh_pipeline = shadow_mesh_pipeline_;
+    sun_in.mesh_layout = shadow_mesh_layout_;
+    sun_in.bindless = bindless_set_;
+    sun_in.level_indices = indices_.handle;
+    sun_in.level_indirect = indirect_.handle;
+    sun_in.level_vbuf = vertices_.bindless_index;
+    sun_in.casters[0] = &models_->duck;
+    sun_in.casters[1] = &models_->sponza;
+    sun_in.casters[2] = &models_->fox.base;
+    sun_in.caster_count = 3;
+    sun_in.sun_view_proj = sun_view_proj;
+    sun_in.slot = frame.slot;
+    record_sun_shadow(sun_in);
 
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
