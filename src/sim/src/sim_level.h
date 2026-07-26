@@ -26,4 +26,10 @@ constexpr f32 WALL_DETECT_DIST = 0.6f;
 [[nodiscard]] bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes,
                              f32* out_nx, f32* out_nz, f32* out_top);
 
+/// Waypoint graph management, driven by load_level: clear the graph, add the
+/// map's authored nodes, then compute links once the level boxes are in place.
+void nav_reset();
+[[nodiscard]] bool nav_add_node(f32 x, f32 y, f32 z);
+void nav_build_links();
+
 }  // namespace sim

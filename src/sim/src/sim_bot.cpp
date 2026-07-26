@@ -106,11 +106,25 @@ InputCmd bot_think(const World& prev, u32 index) {
         return cmd;
     }
 
-    // No enemy: roam between map zones, hopping now and then to keep momentum.
-    const u32 pick = mix(prev.seed, prev.tick.raw / 600, index) % ROAM_COUNT;
-    const f32* goal = ROAM_POINTS[pick];
-    const f32 dx = goal[0] - me.x;
-    const f32 dz = goal[2] - me.z;
+    // No enemy: walk the waypoint graph toward a periodically re-rolled goal
+    // node. Maps without a graph fall back to beelining between roam points.
+    f32 gx = 0.0f;
+    f32 gz = 0.0f;
+    bool climb_hint = false;
+    if (nav_count() > 0) {
+        const u32 goal_node = mix(prev.seed, prev.tick.raw / 600, index) % nav_count();
+        f32 hy = 0.0f;
+        if (!nav_next_hop(me.x, me.y, me.z, goal_node, &gx, &hy, &gz)) {
+            return cmd;  // marooned off the graph; hold position
+        }
+        climb_hint = hy > me.y + 0.5f;  // the next node is up a ledge
+    } else {
+        const u32 pick = mix(prev.seed, prev.tick.raw / 600, index) % ROAM_COUNT;
+        gx = ROAM_POINTS[pick][0];
+        gz = ROAM_POINTS[pick][2];
+    }
+    const f32 dx = gx - me.x;
+    const f32 dz = gz - me.z;
     const f32 flat = sim_sqrt(dx * dx + dz * dz);
     if (flat > 2.0f) {
         const f32 fx = sim_sin(me.yaw);
@@ -122,9 +136,10 @@ InputCmd bot_think(const World& prev, u32 index) {
         cmd.look_dx = steer(me.yaw, desired_yaw, 0.10f);
         cmd.move_y = 1;
         const u32 r = mix(prev.seed, prev.tick.raw / 30, index ^ 0x55u);
-        if ((r & 31) == 0 || (me.on_ground != 0 && me.vx * me.vx + me.vz * me.vz < 1.0f &&
-                              prev.tick.raw % 90 == (index * 9) % 90)) {
-            cmd.buttons |= static_cast<u16>(Button::Jump);  // hop, or unstick
+        if ((r & 31) == 0 || climb_hint ||
+            (me.on_ground != 0 && me.vx * me.vx + me.vz * me.vz < 1.0f &&
+             prev.tick.raw % 90 == (index * 9) % 90)) {
+            cmd.buttons |= static_cast<u16>(Button::Jump);  // hop, climb, or unstick
         }
     }
     return cmd;

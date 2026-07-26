@@ -149,7 +149,9 @@ static void test_map_round_trip() {
         "spawn 1 2 3 0.5\n"
         "cbox -1 0 -1 1 4 1\n"
         "box 5 0 5 9 2.5 9\n"
-        "box -20 0 -20 -18 6 -18\n";
+        "box -20 0 -20 -18 6 -18\n"
+        "node 1 0 3\n"
+        "node 9 0 3\n";
     core::Arena arena = core::Arena::with_capacity(1u << 20);
     const char* path = "sim_tests_map.tmp";
     ASSERT(core::write_entire_file(path,
@@ -165,9 +167,56 @@ static void test_map_round_trip() {
     ASSERT(level_boxes()[2].max_y == 4.0f);  // the cbox sits after the visibles
     ASSERT(level_spawn().x == 1.0f);
     ASSERT(level_spawn().yaw == 0.5f);
+    ASSERT(nav_count() == 2);
     ASSERT(load_level(arena, "missing.umap").is_err());
-    // The failed load keeps the previous level active.
+    // The failed load keeps the previous level, and its nav graph, active.
     ASSERT(level_boxes().size() == 3);
+    ASSERT(nav_count() == 2);
+}
+
+// The waypoint graph links reachable neighbours and routes around gaps: three
+// nodes in a line link pairwise (the ends are out of range of each other), so
+// the path from one end to the other hops through the middle. A wall between
+// two nodes kills their link and the route.
+static void test_nav_pathing() {
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    const char* path = "sim_tests_nav.tmp";
+
+    const char* line_map =
+        "spawn 0 0 0 0\n"
+        "node 0 0 0\n"
+        "node 14 0 0\n"
+        "node 28 0 0\n";
+    ASSERT(core::write_entire_file(path,
+                                   core::Span<const u8>(
+                                       reinterpret_cast<const u8*>(line_map),
+                                       __builtin_strlen(line_map)))
+               .is_ok());
+    ASSERT(load_level(arena, path).is_ok());
+    ASSERT(nav_count() == 3);
+
+    // From the left end toward the right end, the next hop is the middle.
+    f32 hx = 0.0f;
+    f32 hy = 0.0f;
+    f32 hz = 0.0f;
+    ASSERT(nav_next_hop(-2.0f, 0.0f, 0.0f, 2, &hx, &hy, &hz));
+    ASSERT(hx == 14.0f);
+    // From beside the middle node, the next hop is the goal itself.
+    ASSERT(nav_next_hop(15.0f, 0.0f, 0.0f, 2, &hx, &hy, &hz));
+    ASSERT(hx == 28.0f);
+
+    const char* wall_map =
+        "spawn 0 0 0 0\n"
+        "node 0 0 0\n"
+        "node 14 0 0\n"
+        "cbox 6 0 -8 8 6 8\n";
+    ASSERT(core::write_entire_file(path,
+                                   core::Span<const u8>(
+                                       reinterpret_cast<const u8*>(wall_map),
+                                       __builtin_strlen(wall_map)))
+               .is_ok());
+    ASSERT(load_level(arena, path).is_ok());
+    ASSERT(!nav_next_hop(0.0f, 0.0f, 0.0f, 1, &hx, &hy, &hz));
 }
 
 // A tape written to disk and loaded back must replay to the identical hash.
@@ -284,6 +333,7 @@ int main() {
     test_tape_round_trip();
     test_hitscan_kills();
     test_map_round_trip();
+    test_nav_pathing();
     core::log_info("sim_tests: all passed");
     return 0;
 }

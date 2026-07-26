@@ -142,8 +142,10 @@ core::Result<core::Unit, const char*> load_level(core::Arena& scratch, const cha
     // then the back run is copied after the front so the visible prefix holds.
     Aabb visible[MAX_LEVEL_BOXES];
     Aabb collision[MAX_LEVEL_BOXES];
+    f32 nodes[64][3];
     u64 visible_count = 0;
     u64 collision_count = 0;
+    u64 node_count = 0;
     Spawn spawn;
 
     core::Cursor cursor{reinterpret_cast<const char*>(bytes.data()),
@@ -174,6 +176,18 @@ core::Result<core::Unit, const char*> load_level(core::Arena& scratch, const cha
             } else {
                 collision[collision_count++] = box;
             }
+        } else if (std::strcmp(word, "node") == 0) {
+            if (node_count >= 64) {
+                scratch.rewind(marker);
+                return LoadResult::err("map: too many nodes");
+            }
+            f32* n = nodes[node_count];
+            if (!core::parse_f32(cursor, &n[0]) || !core::parse_f32(cursor, &n[1]) ||
+                !core::parse_f32(cursor, &n[2])) {
+                scratch.rewind(marker);
+                return LoadResult::err("map: bad node line");
+            }
+            ++node_count;
         } else {
             scratch.rewind(marker);
             return LoadResult::err("map: unknown directive");
@@ -191,6 +205,14 @@ core::Result<core::Unit, const char*> load_level(core::Arena& scratch, const cha
     loaded_total = visible_count + collision_count;
     loaded_spawn = spawn;
     level_loaded = true;
+
+    // The waypoint graph links against the boxes just installed, so it builds
+    // last. A failed load above leaves the previous graph untouched.
+    nav_reset();
+    for (u64 i = 0; i < node_count; ++i) {
+        (void)nav_add_node(nodes[i][0], nodes[i][1], nodes[i][2]);
+    }
+    nav_build_links();
     return LoadResult::ok(core::Unit{});
 }
 

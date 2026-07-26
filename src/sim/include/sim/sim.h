@@ -172,11 +172,21 @@ struct Spawn {
 /// visibility for bots and hitscan).
 [[nodiscard]] bool segment_clear(f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz);
 
+/// The number of bot waypoint nodes in the loaded map's navigation graph.
+[[nodiscard]] u32 nav_count();
+
+/// The next waypoint on the shortest path from (x, y, z) to node `goal`,
+/// written to the out parameters. Returns false when the graph has no route
+/// from here (or `goal` is out of range).
+[[nodiscard]] bool nav_next_hop(f32 x, f32 y, f32 z, u32 goal, f32* out_x, f32* out_y,
+                                f32* out_z);
+
 /// Load a map file, replacing the active level. The format is line-based text:
-/// `spawn x y z yaw`, `box x0 y0 z0 x1 y1 z1` for visible collision boxes, and
-/// `cbox ...` for invisible collision volumes. Without a loaded map the
-/// built-in level is active. Loading is an editor event, not a frame-loop
-/// operation; `scratch` holds the file bytes during parsing.
+/// `spawn x y z yaw`, `box x0 y0 z0 x1 y1 z1` for visible collision boxes,
+/// `cbox ...` for invisible collision volumes, and `node x y z` for bot
+/// waypoints (linked automatically to reachable neighbours). Without a loaded
+/// map the built-in level is active. Loading is an editor event, not a
+/// frame-loop operation; `scratch` holds the file bytes during parsing.
 /// # Errors
 /// A static message when the file is missing or malformed. The previous level
 /// stays active on error.

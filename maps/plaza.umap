@@ -37,3 +37,26 @@ cbox -45 0 -45 45 25 -44
 cbox -45 0 44 45 25 45
 cbox -45 0 -45 -44 25 45
 cbox 44 0 -45 45 25 45
+
+# Bot waypoints, auto-linked to reachable neighbours on load
+node 0 0 38
+node 14 0 34
+node -14 0 30
+node 8 0 22
+node -26 0 22
+node 26 0 20
+node -38 0 8
+node -28 0 6
+node 0 0 8
+node 30 0 4
+node -8 0 -8
+node 8 0 -10
+node 34 0 -10
+node -28 0 -12
+node 30 0 -22
+node -12 0 -24
+node -24 0 -28
+node 0 0 -28
+node 12 0 -30
+node -13 4 -36
+node 0 0 -41
