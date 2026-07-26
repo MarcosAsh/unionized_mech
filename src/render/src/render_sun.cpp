@@ -134,20 +134,8 @@ VkAccelerationStructureInstanceKHR make_rt_instance(const core::Mat4& world, u64
     return instance;
 }
 
-void record_rt_sun(gpu::Renderer& gpu, VkCommandBuffer cmd, const gpu::Blas& fox_blas,
-                   VkBuffer fox_vertices, u64 fox_vertex_offset,
+void record_rt_sun(gpu::Renderer& gpu, VkCommandBuffer cmd,
                    core::Span<const VkAccelerationStructureInstanceKHR> instances, u32 slot) {
-    // Skinned vertices written by compute feed the BLAS build.
-    rt_barrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-               VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-               VK_ACCESS_2_SHADER_READ_BIT);
-    if (fox_blas.handle != VK_NULL_HANDLE) {
-        gpu.rebuild_blas(cmd, fox_blas, fox_vertices, fox_vertex_offset);
-    }
-    rt_barrier(cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-               VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-               VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-               VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
     gpu.update_tlas(cmd, instances, slot);
     rt_barrier(cmd, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,

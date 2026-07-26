@@ -90,16 +90,8 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
             const f32 x = -half + static_cast<f32>(i) * CELL;
             const f32 z = -half + static_cast<f32>(j) * CELL;
             const bool light = ((i + j) & 1) != 0;
-            f32 r = light ? 0.38f : 0.24f;
-            f32 g = r;
-            f32 b = r + 0.04f;
-            // A warm walkway from the plaza south to the Sponza atrium.
-            if ((i == 49 || i == 50) && z < -16.0f) {
-                r = light ? 0.52f : 0.44f;
-                g = light ? 0.42f : 0.34f;
-                b = 0.26f;
-            }
-            add_quad(verts, indices, x, z, CELL, r, g, b);
+            const f32 r = light ? 0.38f : 0.24f;
+            add_quad(verts, indices, x, z, CELL, r, r, r + 0.04f);
         }
     }
 
@@ -295,47 +287,6 @@ RenderModel make_trooper(gpu::Renderer& gpu, u32 fallback_texture) {
     mesh.indices = core::Span<const u32>(indices, ic);
     mesh.submeshes = core::Span<const asset::Submesh>(subs, 2);
     return model_from_data(gpu, mesh, fallback_texture);
-}
-
-void fox_companion_update(FoxCompanion& fox, f32 player_x, f32 player_z, f32 dt) {
-    const f32 dx = player_x - fox.x;
-    const f32 dz = player_z - fox.z;
-    const f32 dist = std::sqrt(dx * dx + dz * dz);
-
-    // Approach until comfortably near, sprint when far behind.
-    f32 desired = (dist - 2.2f) * 1.4f;
-    if (desired < 0.0f) {
-        desired = 0.0f;
-    }
-    if (desired > 5.5f) {
-        desired = 5.5f;
-    }
-    fox.speed += (desired - fox.speed) * (1.0f - std::exp(-6.0f * dt));
-
-    if (dist > 0.05f && fox.speed > 0.05f) {
-        const f32 target_yaw = std::atan2(dx / dist, dz / dist);
-        fox.yaw += core::angle_lerp(fox.yaw, target_yaw, 1.0f - std::exp(-8.0f * dt)) - fox.yaw;
-        fox.x += std::sin(fox.yaw) * fox.speed * dt;
-        fox.z += std::cos(fox.yaw) * fox.speed * dt;
-    }
-}
-
-void fox_gait(f32 speed, u32* clip_a, u32* clip_b, f32* blend) {
-    // Fox clip order: 0 Survey (idle), 1 Walk, 2 Run.
-    if (speed < 0.25f) {
-        *clip_a = 0;
-        *clip_b = 0;
-        *blend = 0.0f;
-    } else if (speed < 1.6f) {
-        *clip_a = 0;
-        *clip_b = 1;
-        *blend = (speed - 0.25f) / 1.35f;
-    } else {
-        *clip_a = 1;
-        *clip_b = 2;
-        f32 t = (speed - 1.6f) / 2.9f;
-        *blend = t > 1.0f ? 1.0f : t;
-    }
 }
 
 }  // namespace render

@@ -56,22 +56,16 @@ i64 file_mtime(const char* path) {
 /// keep them behind a forward declaration.
 struct SceneModels {
     RenderModel duck;
-    RenderModel sponza;
-    SkinnedModel fox;
     RenderModel viewmodel;
     RenderModel trooper;
     RenderModel tracer;
     RenderModel hitmarker;
     RenderModel overlay;
-    FoxCompanion fox_state;
     gpu::Blas level_blas;
     gpu::Blas trooper_blas;
     gpu::Blas duck_blas;
-    gpu::Blas sponza_blas;
-    gpu::Blas fox_blas;
     gpu::Buffer globals;
     SceneGlobals* globals_mapped = nullptr;
-    f32 last_anim_time = 0.0f;
     u32 white_texture = 0;
 };
 
@@ -117,10 +111,6 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->white_texture = gpu.create_texture(white, 1, 1).bindless_index;
     scene.models_->duck =
         model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
-    scene.models_->sponza =
-        model_load(gpu, scratch, ASSET_DIR "/sponza", scene.models_->white_texture);
-    scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
-                                            scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
     scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
     scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
@@ -128,9 +118,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->overlay = make_overlay_quad(gpu, scene.models_->white_texture);
 
     // On ray tracing hardware, every caster gets a BLAS and the sun shadows
-    // trace against the scene instead of sampling the shadow map. The fox BLAS
-    // builds from bind-pose vertices here and rebuilds per frame from the
-    // skinned slice.
+    // trace against the scene instead of sampling the shadow map.
     scene.rt_ = gpu.rt_available();
     if (scene.rt_) {
         scene.models_->level_blas =
@@ -143,22 +131,10 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
                 sizeof(asset::MeshVertex), scene.models_->duck.indices.handle,
                 scene.models_->duck.total_indices);
         }
-        if (scene.models_->sponza.loaded) {
-            scene.models_->sponza_blas = gpu.create_blas(
-                scene.models_->sponza.vertices.handle, scene.models_->sponza.total_vertices,
-                sizeof(asset::MeshVertex), scene.models_->sponza.indices.handle,
-                scene.models_->sponza.total_indices);
-        }
         scene.models_->trooper_blas = gpu.create_blas(
             scene.models_->trooper.vertices.handle, scene.models_->trooper.total_vertices,
             sizeof(asset::MeshVertex), scene.models_->trooper.indices.handle,
             scene.models_->trooper.total_indices);
-        if (scene.models_->fox.base.loaded && scene.models_->fox.vertex_count > 0) {
-            scene.models_->fox_blas = gpu.create_blas(
-                scene.models_->fox.base.vertices.handle, scene.models_->fox.vertex_count,
-                sizeof(asset::MeshVertex), scene.models_->fox.base.indices.handle,
-                scene.models_->fox.base.total_indices);
-        }
         gpu.create_tlas(16);
         core::log_info("render: ray traced sun shadows active");
     }
@@ -263,8 +239,6 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // records, zero the survivor counters, and let compute build the indirect
     // command buffers from whatever the frustum keeps.
     model_begin(models_->duck);
-    model_begin(models_->sponza);
-    model_begin(models_->fox.base);
     model_begin(models_->viewmodel);
     model_begin(models_->trooper);
     model_begin(models_->tracer);
@@ -276,29 +250,6 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                                                           std::sin(half), std::cos(half));
         model_queue(models_->duck, frame.slot, spot.pos, rot, spot.scale);
     }
-    model_queue(models_->sponza, frame.slot, SPONZA_POS, core::Quat{}, 1.0f);
-
-    // The fox is a companion now: it follows the player, and its clips are
-    // chosen by its actual speed, a state-driven 1D blend tree over Survey,
-    // Walk, and Run. Animation is clocked off sim time so it stays smooth
-    // under interpolation.
-    const f32 anim_time =
-        static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
-    const f32 frame_dt =
-        anim_time > models_->last_anim_time ? anim_time - models_->last_anim_time : 0.0f;
-    models_->last_anim_time = anim_time;
-
-    fox_companion_update(models_->fox_state, cam_x, cam_z, frame_dt);
-    u32 fox_clip_a = 0;
-    u32 fox_clip_b = 0;
-    f32 fox_blend = 0.0f;
-    fox_gait(models_->fox_state.speed, &fox_clip_a, &fox_clip_b, &fox_blend);
-    const core::Vec3 fox_pos{models_->fox_state.x, 0.0f, models_->fox_state.z};
-    const core::Quat fox_rot = core::Quat::from_axis_half(
-        core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(models_->fox_state.yaw * 0.5f),
-        std::cos(models_->fox_state.yaw * 0.5f));
-    skinned_model_queue(models_->fox, frame.slot, fox_pos, fox_rot, 0.02f);
-
     // Everyone else in the match, tinted by team.
     constexpr f32 TEAM_TINTS[2][4] = {{0.30f, 0.50f, 1.00f, 1.0f}, {1.00f, 0.42f, 0.22f, 1.0f}};
     for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
@@ -415,11 +366,10 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[8] = {&models_->duck,      &models_->sponza,
-                                         &models_->fox.base,  &models_->viewmodel,
-                                         &models_->trooper,   &models_->tracer,
+    const RenderModel* fill_models[6] = {&models_->duck,   &models_->viewmodel,
+                                         &models_->trooper, &models_->tracer,
                                          &models_->hitmarker, &models_->overlay};
-    for (u32 i = 0; i < 8; ++i) {
+    for (u32 i = 0; i < 6; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -444,10 +394,6 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     }
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot, PASS_CAMERA);
-    model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot, PASS_CAMERA);
-    model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot, PASS_CAMERA);
     // The viewmodel is always on screen by construction: cull it with planes
     // that accept everything, since its record is in camera space.
     model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
@@ -463,22 +409,15 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // Shadow casters are culled permissively: the sun sees the whole map.
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
                frame.slot, PASS_SHADOW);
-    model_cull(models_->sponza, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
-               accept_all, frame.slot, PASS_SHADOW);
-    model_cull(models_->fox.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
-               accept_all, frame.slot, PASS_SHADOW);
     model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
-    skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_,
-                         fox_clip_a, fox_clip_b, fox_blend, anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
                    VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
 
     if (rt_) {
-        // Ray traced sun: rebuild the fox BLAS from this frame's skinned
-        // vertices and the TLAS from the live instance transforms.
+        // Ray traced sun: rebuild the TLAS from the live instance transforms.
         VkAccelerationStructureInstanceKHR instances[16];
         u32 instance_count = 0;
         instances[instance_count++] = make_rt_instance(Mat4{}, models_->level_blas.address);
@@ -494,10 +433,6 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                     make_rt_instance(world, models_->duck_blas.address);
             }
         }
-        if (models_->sponza_blas.handle != VK_NULL_HANDLE) {
-            instances[instance_count++] = make_rt_instance(
-                core::Mat4::translation(SPONZA_POS), models_->sponza_blas.address);
-        }
         if (models_->trooper_blas.handle != VK_NULL_HANDLE) {
             for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
                 const sim::Character& other = curr.chars[i];
@@ -512,16 +447,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                     models_->trooper_blas.address);
             }
         }
-        if (models_->fox_blas.handle != VK_NULL_HANDLE) {
-            core::Mat4 fox_world = core::Mat4::trs(fox_pos, fox_rot);
-            fox_world = fox_world * core::Mat4::scale(core::Vec3{0.02f, 0.02f, 0.02f});
-            instances[instance_count++] =
-                make_rt_instance(fox_world, models_->fox_blas.address);
-        }
-        record_rt_sun(*gpu_, frame.cmd, models_->fox_blas,
-                      models_->fox.skinned_verts.handle,
-                      static_cast<u64>(frame.slot) * models_->fox.vertex_count *
-                          sizeof(asset::MeshVertex),
+        record_rt_sun(*gpu_, frame.cmd,
                       core::Span<const VkAccelerationStructureInstanceKHR>(instances,
                                                                            instance_count),
                       frame.slot);
@@ -539,10 +465,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     sun_in.level_indirect = indirect_.handle;
     sun_in.level_vbuf = vertices_.bindless_index;
     sun_in.casters[0] = &models_->duck;
-    sun_in.casters[1] = &models_->sponza;
-    sun_in.casters[2] = &models_->fox.base;
-    sun_in.casters[3] = &models_->trooper;
-    sun_in.caster_count = 4;
+    sun_in.casters[1] = &models_->trooper;
+    sun_in.caster_count = 2;
     sun_in.sun_view_proj = sun_view_proj;
     sun_in.slot = frame.slot;
     record_sun_shadow(sun_in);
@@ -608,10 +532,6 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                             &bindless_set_, 0, nullptr);
     const u32 globals_idx = models_->globals.bindless_index;
     model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, globals_idx, frame.slot);
-    model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, globals_idx,
-                      frame.slot);
-    model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, globals_idx,
-                      frame.slot);
     model_draw_culled(models_->trooper, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->tracer, frame.cmd, mesh_layout_, view_proj, globals_idx,
