@@ -229,39 +229,4 @@ void fox_gait(f32 speed, u32* clip_a, u32* clip_b, f32* blend) {
     }
 }
 
-void viewmodel_placement(const ViewmodelInput& in, core::Vec3* out_pos, core::Quat* out_rot) {
-    const f32 cy = std::cos(in.yaw);
-    const f32 sy = std::sin(in.yaw);
-    const f32 cp = std::cos(in.pitch);
-    const f32 sp = std::sin(in.pitch);
-    const core::Vec3 forward{sy * cp, sp, -cy * cp};
-    const core::Vec3 right{cy, 0.0f, sy};
-    const core::Vec3 up = cross(right, forward);
-
-    // Anchor low right of the view, with a speed-scaled figure-eight bob, a
-    // landing dip, and a tuck while sliding.
-    const f32 speed_norm = in.ground_speed > 8.0f ? 1.0f : in.ground_speed / 8.0f;
-    const f32 bob_y = std::sin(in.time * 11.0f) * 0.008f * speed_norm;
-    const f32 bob_x = std::cos(in.time * 5.5f) * 0.005f * speed_norm;
-    f32 impact = in.land_impact;
-    if (impact > 10.0f) {
-        impact = 10.0f;
-    }
-    const f32 dip = impact * 0.006f + (in.sliding ? 0.05f : 0.0f);
-
-    *out_pos = in.eye + right * (0.16f + bob_x) + up * (-0.13f + bob_y - dip) + forward * 0.32f;
-
-    const core::Quat q_yaw =
-        core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(in.yaw * 0.5f),
-                                   std::cos(in.yaw * 0.5f));
-    const core::Quat q_pitch =
-        core::Quat::from_axis_half(core::Vec3{1.0f, 0.0f, 0.0f}, std::sin(in.pitch * 0.5f),
-                                   std::cos(in.pitch * 0.5f));
-    const f32 roll = in.roll + (in.sliding ? 0.12f : 0.0f);
-    const core::Quat q_roll =
-        core::Quat::from_axis_half(core::Vec3{0.0f, 0.0f, -1.0f}, std::sin(roll * 0.5f),
-                                   std::cos(roll * 0.5f));
-    *out_rot = q_yaw * q_pitch * q_roll;
-}
-
 }  // namespace render

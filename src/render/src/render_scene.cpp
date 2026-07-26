@@ -211,20 +211,11 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         std::cos(models_->fox_state.yaw * 0.5f));
     skinned_model_queue(models_->fox, frame.slot, fox_pos, fox_rot, 0.02f);
 
-    // The first-person viewmodel: a placeholder rig that reads movement state.
-    ViewmodelInput vm;
-    vm.eye = core::Vec3{cam_x, cam_y + eye_height, cam_z};
-    vm.yaw = yaw;
-    vm.pitch = pitch;
-    vm.roll = cur_roll_;
-    vm.ground_speed = std::sqrt(curr.vel_x * curr.vel_x + curr.vel_z * curr.vel_z);
-    vm.land_impact = curr.land_impact;
-    vm.time = anim_time;
-    vm.sliding = curr.state == sim::MoveState::Slide;
-    core::Vec3 vm_pos;
-    core::Quat vm_rot;
-    viewmodel_placement(vm, &vm_pos, &vm_rot);
-    model_queue(models_->viewmodel, frame.slot, vm_pos, vm_rot, 1.0f);
+    // The first-person viewmodel lives in camera space and is drawn with its
+    // own fixed-FOV projection, so it stays rigidly glued to the view no
+    // matter what the world camera does (speed FOV, roll, interpolation).
+    model_queue(models_->viewmodel, frame.slot, core::Vec3{0.17f, -0.14f, -0.33f}, core::Quat{},
+                1.0f);
 
     // Blob shadows glue the animated characters to the floor until M5 shadows.
     const core::Vec3 lift{0.0f, 0.02f, 0.0f};  // above the floor, below the feet
@@ -262,8 +253,14 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot);
     model_cull(models_->blob_shadow, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                planes, frame.slot);
-    model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot);
+    // The viewmodel is always on screen by construction: cull it with planes
+    // that accept everything, since its record is in camera space.
+    f32 accept_all[6][4] = {};
+    for (u32 i = 0; i < 6; ++i) {
+        accept_all[i][3] = 1.0f;
+    }
+    model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot);
     skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_,
                          fox_clip_a, fox_clip_b, fox_blend, anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -331,7 +328,17 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->blob_shadow, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, frame.slot);
-    model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, view_proj, frame.slot);
+    // The viewmodel draws into a compressed near slice of the depth range so
+    // world geometry can never occlude it, the classic viewmodel depth hack.
+    VkViewport vm_viewport{};
+    vm_viewport.width = static_cast<f32>(frame.extent.width);
+    vm_viewport.height = static_cast<f32>(frame.extent.height);
+    vm_viewport.maxDepth = 0.05f;
+    vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);
+    const Mat4 vm_proj = perspective(1.05f, aspect, 0.05f, 10.0f);
+    model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, frame.slot);
+    vm_viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(frame.cmd, 0, 1, &vm_viewport);
 
     vkCmdEndRendering(frame.cmd);
 }

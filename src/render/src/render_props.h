@@ -64,20 +64,4 @@ void fox_companion_update(FoxCompanion& fox, f32 player_x, f32 player_z, f32 dt)
 /// when strolling, Run when chasing. The 1D blend space of a blend tree.
 void fox_gait(f32 speed, u32* clip_a, u32* clip_b, f32* blend);
 
-/// Camera and movement state the viewmodel placement reads.
-struct ViewmodelInput {
-    core::Vec3 eye;
-    f32 yaw = 0.0f;
-    f32 pitch = 0.0f;
-    f32 roll = 0.0f;
-    f32 ground_speed = 0.0f;
-    f32 land_impact = 0.0f;
-    f32 time = 0.0f;
-    bool sliding = false;
-};
-
-/// Where the viewmodel sits this frame: anchored to the camera with speed bob,
-/// a landing dip, and a slide tuck.
-void viewmodel_placement(const ViewmodelInput& in, core::Vec3* out_pos, core::Quat* out_rot);
-
 }  // namespace render
