@@ -3,6 +3,7 @@
 #include "render/render.h"
 #include "render_math.h"
 #include "render_model.h"
+#include "render_props.h"
 
 #include "core/array.h"
 #include "core/log.h"
@@ -16,32 +17,10 @@ namespace render {
 
 namespace {
 
-struct Vertex {
-    f32 pos[4];
-    f32 color[4];
-};
-
 struct PushConstants {
     f32 view_proj[16];
     u32 vbuf;
 };
-
-struct DuckSpot {
-    core::Vec3 pos;
-    f32 yaw;
-    f32 scale;
-};
-
-// Ducks on the plaza. Visual decoration only; they have no collision.
-constexpr DuckSpot DUCKS[3] = {
-    {{4.0f, 0.0f, 4.0f}, 0.6f, 1.5f},
-    {{-6.0f, 2.0f, 6.0f}, 2.4f, 1.0f},
-    {{2.0f, 0.0f, -9.0f}, -1.2f, 2.5f},
-};
-
-// The Sponza atrium, placed south of the plaza. Collision boxes matching its
-// main walls live in sim's level so it is walkable and wallrunnable.
-constexpr core::Vec3 SPONZA_POS{0.0f, 0.0f, -90.0f};
 
 // A global execution and memory barrier between the cull pre-pass stages.
 void memory_barrier(VkCommandBuffer cmd, VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
@@ -67,81 +46,6 @@ i64 file_mtime(const char* path) {
     return static_cast<i64>(st.st_mtim.tv_sec) * 1000000000 + static_cast<i64>(st.st_mtim.tv_nsec);
 }
 
-void add_vertex(core::Array<Vertex>& verts, f32 x, f32 y, f32 z, f32 r, f32 g, f32 b) {
-    Vertex v;
-    v.pos[0] = x;
-    v.pos[1] = y;
-    v.pos[2] = z;
-    v.pos[3] = 1.0f;
-    v.color[0] = r;
-    v.color[1] = g;
-    v.color[2] = b;
-    v.color[3] = 1.0f;
-    verts.push(v);
-}
-
-void add_quad(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 x, f32 z, f32 cell, f32 r,
-              f32 g, f32 b) {
-    const u32 base = static_cast<u32>(verts.size());
-    add_vertex(verts, x, 0.0f, z, r, g, b);
-    add_vertex(verts, x + cell, 0.0f, z, r, g, b);
-    add_vertex(verts, x + cell, 0.0f, z + cell, r, g, b);
-    add_vertex(verts, x, 0.0f, z + cell, r, g, b);
-    const u32 quad[6] = {base, base + 1, base + 2, base, base + 2, base + 3};
-    for (u32 i = 0; i < 6; ++i) {
-        indices.push(quad[i]);
-    }
-}
-
-void add_box(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 x0, f32 y0, f32 z0, f32 x1,
-             f32 y1, f32 z1, f32 r, f32 g, f32 b) {
-    const u32 base = static_cast<u32>(verts.size());
-    const f32 xs[8] = {x0, x1, x1, x0, x0, x1, x1, x0};
-    const f32 ys[8] = {y0, y0, y1, y1, y0, y0, y1, y1};
-    const f32 zs[8] = {z0, z0, z0, z0, z1, z1, z1, z1};
-    for (u32 i = 0; i < 8; ++i) {
-        add_vertex(verts, xs[i], ys[i], zs[i], r, g, b);
-    }
-    const u32 faces[36] = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 4, 0, 3, 4, 3, 7,
-                           1, 5, 6, 1, 6, 2, 3, 2, 6, 3, 6, 7, 4, 5, 1, 4, 1, 0};
-    for (u32 i = 0; i < 36; ++i) {
-        indices.push(base + faces[i]);
-    }
-}
-
-void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
-    constexpr i32 N = 100;
-    constexpr f32 CELL = 2.0f;
-    const f32 half = static_cast<f32>(N) * CELL * 0.5f;
-    for (i32 i = 0; i < N; ++i) {
-        for (i32 j = 0; j < N; ++j) {
-            const f32 x = -half + static_cast<f32>(i) * CELL;
-            const f32 z = -half + static_cast<f32>(j) * CELL;
-            const bool light = ((i + j) & 1) != 0;
-            f32 r = light ? 0.38f : 0.24f;
-            f32 g = r;
-            f32 b = r + 0.04f;
-            // A warm walkway from the plaza south to the Sponza atrium.
-            if ((i == 49 || i == 50) && z < -16.0f) {
-                r = light ? 0.52f : 0.44f;
-                g = light ? 0.42f : 0.34f;
-                b = 0.26f;
-            }
-            add_quad(verts, indices, x, z, CELL, r, g, b);
-        }
-    }
-
-    const f32 palette[6][3] = {{0.85f, 0.3f, 0.3f}, {0.3f, 0.75f, 0.4f}, {0.35f, 0.5f, 0.9f},
-                               {0.9f, 0.75f, 0.3f}, {0.7f, 0.4f, 0.85f}, {0.3f, 0.8f, 0.8f}};
-    const core::Span<const sim::Aabb> boxes = sim::visible_boxes();
-    for (u64 c = 0; c < boxes.size(); ++c) {
-        const sim::Aabb& b = boxes[c];
-        const f32* col = palette[c % 6];
-        add_box(verts, indices, b.min_x, b.min_y, b.min_z, b.max_x, b.max_y, b.max_z, col[0],
-                col[1], col[2]);
-    }
-}
-
 }  // namespace
 
 /// The imported models, held in the permanent arena so the public header can
@@ -151,55 +55,18 @@ struct SceneModels {
     RenderModel sponza;
     SkinnedModel fox;
     RenderModel blob_shadow;
+    RenderModel viewmodel;
+    FoxCompanion fox_state;
+    f32 last_anim_time = 0.0f;
     u32 white_texture = 0;
 };
 
-namespace {
 
-// A dark disc laid on the ground under characters. Until real shadows arrive
-// in M5, this is what visually glues a moving thing to the floor.
-RenderModel make_blob_shadow(gpu::Renderer& gpu, u32 fallback_texture) {
-    constexpr u32 SEGMENTS = 16;
-    static asset::MeshVertex verts[SEGMENTS + 1];
-    static u32 indices[SEGMENTS * 3];
-    verts[0].pos = core::Vec3{0.0f, 0.0f, 0.0f};
-    verts[0].normal = core::Vec3{0.0f, 1.0f, 0.0f};
-    for (u32 i = 0; i < SEGMENTS; ++i) {
-        const f32 a = static_cast<f32>(i) * (6.2831853f / SEGMENTS);
-        verts[i + 1].pos = core::Vec3{std::cos(a), 0.0f, std::sin(a)};
-        verts[i + 1].normal = core::Vec3{0.0f, 1.0f, 0.0f};
-        indices[i * 3] = 0;
-        indices[i * 3 + 1] = 1 + (i + 1) % SEGMENTS;
-        indices[i * 3 + 2] = 1 + i;
-    }
-    static asset::Submesh sub;
-    sub.index_offset = 0;
-    sub.index_count = SEGMENTS * 3;
-    sub.texture = asset::NO_TEXTURE;
-    sub.color[0] = 0.10f;
-    sub.color[1] = 0.10f;
-    sub.color[2] = 0.12f;
-    sub.color[3] = 1.0f;
-    sub.bounds_min[0] = -1.0f;
-    sub.bounds_min[1] = -0.1f;
-    sub.bounds_min[2] = -1.0f;
-    sub.bounds_max[0] = 1.0f;
-    sub.bounds_max[1] = 0.1f;
-    sub.bounds_max[2] = 1.0f;
-
-    asset::MeshData mesh;
-    mesh.vertices = core::Span<const asset::MeshVertex>(verts, SEGMENTS + 1);
-    mesh.indices = core::Span<const u32>(indices, SEGMENTS * 3);
-    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
-    return model_from_data(gpu, mesh, fallback_texture);
-}
-
-}  // namespace
 
 Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch) {
-    core::Array<Vertex> verts = scratch.make_array<Vertex>(65536);
+    core::Array<LevelVertex> verts = scratch.make_array<LevelVertex>(65536);
     core::Array<u32> indices = scratch.make_array<u32>(131072);
-    build_scene(verts, indices);
+    build_level(verts, indices);
 
     Scene scene;
     scene.device_ = gpu.device_handle();
@@ -209,7 +76,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.depth_format_ = gpu.depth_format();
     scene.index_count_ = static_cast<u32>(indices.size());
 
-    scene.vertices_ = gpu.create_device_buffer(verts.as_span().data(), verts.size() * sizeof(Vertex),
+    scene.vertices_ = gpu.create_device_buffer(verts.as_span().data(), verts.size() * sizeof(LevelVertex),
                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     scene.indices_ = gpu.create_device_buffer(indices.as_span().data(), indices.size() * sizeof(u32),
                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
@@ -233,6 +100,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->fox = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/fox",
                                             scene.models_->white_texture);
     scene.models_->blob_shadow = make_blob_shadow(gpu, scene.models_->white_texture);
+    scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
 
     scene.build_pipelines();
     scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
@@ -313,6 +181,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->sponza);
     model_begin(models_->fox.base);
     model_begin(models_->blob_shadow);
+    model_begin(models_->viewmodel);
     for (const DuckSpot& spot : DUCKS) {
         const f32 half = spot.yaw * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
@@ -321,35 +190,41 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     }
     model_queue(models_->sponza, frame.slot, SPONZA_POS, core::Quat{}, 1.0f);
 
-    // The demo fox circles the plaza on a gait schedule: walk, then run, with
-    // one-second crossfades, a first blend tree over real clips. Animation is
-    // clocked off sim time so it stays smooth under interpolation. Ground speed
-    // follows the gait so the feet do not skate.
+    // The fox is a companion now: it follows the player, and its clips are
+    // chosen by its actual speed, a state-driven 1D blend tree over Survey,
+    // Walk, and Run. Animation is clocked off sim time so it stays smooth
+    // under interpolation.
     const f32 anim_time =
         static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
-    const f32 cycle_t = std::fmod(anim_time, 20.0f);
-    f32 run_blend;
-    if (cycle_t < 9.0f) {
-        run_blend = 0.0f;
-    } else if (cycle_t < 10.0f) {
-        run_blend = cycle_t - 9.0f;
-    } else if (cycle_t < 19.0f) {
-        run_blend = 1.0f;
-    } else {
-        run_blend = 20.0f - cycle_t;
-    }
-    const f32 omega = lerp(0.083f, 0.35f, run_blend);
-    const f32 frame_dt = anim_time > last_anim_time_ ? anim_time - last_anim_time_ : 0.0f;
-    last_anim_time_ = anim_time;
-    fox_angle_ += omega * frame_dt;
-    const f32 circle_angle = fox_angle_;
-    const core::Vec3 fox_pos{12.0f * std::cos(circle_angle), 0.0f,
-                             12.0f * std::sin(circle_angle)};
-    const core::Vec3 fox_dir{-std::sin(circle_angle), 0.0f, std::cos(circle_angle)};
-    const f32 fox_yaw = std::atan2(fox_dir.x, fox_dir.z);
+    const f32 frame_dt =
+        anim_time > models_->last_anim_time ? anim_time - models_->last_anim_time : 0.0f;
+    models_->last_anim_time = anim_time;
+
+    fox_companion_update(models_->fox_state, cam_x, cam_z, frame_dt);
+    u32 fox_clip_a = 0;
+    u32 fox_clip_b = 0;
+    f32 fox_blend = 0.0f;
+    fox_gait(models_->fox_state.speed, &fox_clip_a, &fox_clip_b, &fox_blend);
+    const core::Vec3 fox_pos{models_->fox_state.x, 0.0f, models_->fox_state.z};
     const core::Quat fox_rot = core::Quat::from_axis_half(
-        core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(fox_yaw * 0.5f), std::cos(fox_yaw * 0.5f));
+        core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(models_->fox_state.yaw * 0.5f),
+        std::cos(models_->fox_state.yaw * 0.5f));
     skinned_model_queue(models_->fox, frame.slot, fox_pos, fox_rot, 0.02f);
+
+    // The first-person viewmodel: a placeholder rig that reads movement state.
+    ViewmodelInput vm;
+    vm.eye = core::Vec3{cam_x, cam_y + eye_height, cam_z};
+    vm.yaw = yaw;
+    vm.pitch = pitch;
+    vm.roll = cur_roll_;
+    vm.ground_speed = std::sqrt(curr.vel_x * curr.vel_x + curr.vel_z * curr.vel_z);
+    vm.land_impact = curr.land_impact;
+    vm.time = anim_time;
+    vm.sliding = curr.state == sim::MoveState::Slide;
+    core::Vec3 vm_pos;
+    core::Quat vm_rot;
+    viewmodel_placement(vm, &vm_pos, &vm_rot);
+    model_queue(models_->viewmodel, frame.slot, vm_pos, vm_rot, 1.0f);
 
     // Blob shadows glue the animated characters to the floor until M5 shadows.
     const core::Vec3 lift{0.0f, 0.02f, 0.0f};  // above the floor, below the feet
@@ -359,9 +234,9 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                     0.55f * spot.scale);
     }
 
-    const RenderModel* fill_models[4] = {&models_->duck, &models_->sponza, &models_->fox.base,
-                                         &models_->blob_shadow};
-    for (u32 i = 0; i < 4; ++i) {
+    const RenderModel* fill_models[5] = {&models_->duck, &models_->sponza, &models_->fox.base,
+                                         &models_->blob_shadow, &models_->viewmodel};
+    for (u32 i = 0; i < 5; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * sizeof(u32), sizeof(u32), 0);
@@ -387,8 +262,10 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot);
     model_cull(models_->blob_shadow, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                planes, frame.slot);
-    skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_, 1,
-                         2, run_blend, anim_time, frame.slot);
+    model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot);
+    skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_,
+                         fox_clip_a, fox_clip_b, fox_blend, anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
@@ -454,6 +331,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_draw_culled(models_->sponza, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->blob_shadow, frame.cmd, mesh_layout_, view_proj, frame.slot);
     model_draw_culled(models_->fox.base, frame.cmd, mesh_layout_, view_proj, frame.slot);
+    model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, view_proj, frame.slot);
 
     vkCmdEndRendering(frame.cmd);
 }
