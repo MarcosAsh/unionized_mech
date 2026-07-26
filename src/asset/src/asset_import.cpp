@@ -1,4 +1,5 @@
 #include "asset/asset.h"
+#include "asset_skin.h"
 
 #include "core/file.h"
 
@@ -45,8 +46,13 @@ struct Buckets {
     }
 };
 
+// Triangle primitives, indexed or not. Non-indexed ones get identity indices.
 bool is_triangles(const cgltf_primitive& prim) {
-    return prim.type == cgltf_primitive_type_triangles && prim.indices != nullptr;
+    return prim.type == cgltf_primitive_type_triangles;
+}
+
+u64 prim_index_count(const cgltf_primitive& prim, const cgltf_accessor* pos) {
+    return prim.indices != nullptr ? prim.indices->count : pos->count;
 }
 
 const cgltf_accessor* find_attr(const cgltf_primitive& prim, cgltf_attribute_type type) {
@@ -75,7 +81,7 @@ void count_node(const cgltf_node* node, Buckets* buckets, bool* overflow) {
                 return;
             }
             bucket->vertex_count += pos->count;
-            bucket->index_count += prim.indices->count;
+            bucket->index_count += prim_index_count(prim, pos);
         }
     }
     for (u64 c = 0; c < node->children_count; ++c) {
@@ -98,13 +104,39 @@ void transform_dir(const f32 m[16], core::Vec3 d, core::Vec3* out) {
 struct Writer {
     core::Span<MeshVertex> vertices;
     core::Span<u32> indices;
+    core::Span<SkinVertex> skin;      // empty when the model is unskinned
+    const u32* joint_remap = nullptr;  // glTF joint index to engine joint index
     u64 vert_cursor = 0;
 };
+
+void read_skin_vertex(const cgltf_primitive& prim, u64 i, const u32* remap, SkinVertex* out) {
+    const cgltf_accessor* joints = find_attr(prim, cgltf_attribute_type_joints);
+    const cgltf_accessor* weights = find_attr(prim, cgltf_attribute_type_weights);
+    if (joints == nullptr || weights == nullptr) {
+        *out = SkinVertex{};
+        out->weights[0] = 1.0f;  // fully bound to joint 0 so it still deforms
+        return;
+    }
+    cgltf_uint j[4] = {0, 0, 0, 0};
+    f32 w[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    cgltf_accessor_read_uint(joints, i, j, 4);
+    cgltf_accessor_read_float(weights, i, w, 4);
+    for (u32 k = 0; k < 4; ++k) {
+        out->joints[k] = static_cast<u16>(remap[j[k] < anim::MAX_JOINTS ? j[k] : 0]);
+        out->weights[k] = w[k];
+    }
+}
 
 void append_node(const cgltf_node* node, Buckets* buckets, Writer* w) {
     if (node->mesh != nullptr) {
         f32 world[16];
         cgltf_node_transform_world(node, world);
+        // Per the glTF spec, a skinned mesh ignores its node transform: joints
+        // pose it instead. Use identity so bind-pose data stays in skin space.
+        if (node->skin != nullptr && !w->skin.empty()) {
+            const f32 identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            std::memcpy(world, identity, sizeof(world));
+        }
 
         for (u64 p = 0; p < node->mesh->primitives_count; ++p) {
             const cgltf_primitive& prim = node->mesh->primitives[p];
@@ -141,14 +173,20 @@ void append_node(const cgltf_node* node, Buckets* buckets, Writer* w) {
                     vertex.u = st[0];
                     vertex.v = st[1];
                 }
+                if (!w->skin.empty()) {
+                    read_skin_vertex(prim, i, w->joint_remap, &w->skin[w->vert_cursor]);
+                }
                 w->vertices[w->vert_cursor] = vertex;
                 ++w->vert_cursor;
             }
 
-            for (u64 i = 0; i < prim.indices->count; ++i) {
+            const u64 prim_indices = prim_index_count(prim, pos);
+            for (u64 i = 0; i < prim_indices; ++i) {
                 const u64 slot = bucket->index_offset + bucket->index_cursor;
-                w->indices[slot] =
-                    static_cast<u32>(base + cgltf_accessor_read_index(prim.indices, i));
+                const u64 index = prim.indices != nullptr
+                                      ? cgltf_accessor_read_index(prim.indices, i)
+                                      : i;
+                w->indices[slot] = static_cast<u32>(base + index);
                 ++bucket->index_cursor;
             }
         }
@@ -257,9 +295,16 @@ core::Result<Model, const char*> import_gltf(core::Arena& arena, const char* pat
         return ImportResult::err("glTF has no triangle geometry");
     }
 
+    SkinImport skin_import;
+    (void)import_skeleton(data, &skin_import);
+
     Writer writer;
     writer.vertices = arena.alloc_n<MeshVertex>(total_verts);
     writer.indices = arena.alloc_n<u32>(total_indices);
+    if (skin_import.has) {
+        writer.skin = arena.alloc_n<SkinVertex>(total_verts);
+        writer.joint_remap = skin_import.gltf_to_engine;
+    }
     for (u64 n = 0; n < scene->nodes_count; ++n) {
         append_node(scene->nodes[n], &buckets, &writer);
     }
@@ -339,6 +384,11 @@ core::Result<Model, const char*> import_gltf(core::Arena& arena, const char* pat
     model.mesh.indices = core::Span<const u32>(writer.indices.data(), total_indices);
     model.mesh.submeshes = core::Span<const Submesh>(submeshes.data(), submeshes.size());
     model.textures = core::Span<const TextureData>(textures.data(), texture_count);
+    if (skin_import.has) {
+        model.skin = core::Span<const SkinVertex>(writer.skin.data(), writer.skin.size());
+        model.skeleton = skin_import.skeleton;
+        model.clips = import_clips(data, skin_import, arena);
+    }
 
     cgltf_free(data);
     return ImportResult::ok(model);

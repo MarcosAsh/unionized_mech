@@ -26,8 +26,60 @@ struct TextureHeader {
 
 constexpr u32 MESH_MAGIC = 0x33534D55u;  // "UMS3" little-endian
 constexpr u32 TEX_MAGIC = 0x58544D55u;   // "UMTX" little-endian
+constexpr u32 SKIN_MAGIC = 0x4E534D55u;  // "UMSN" little-endian
+
+struct SkinHeader {
+    u32 magic;
+    u32 count;
+};
 
 }  // namespace
+
+core::Result<core::Unit, const char*> skin_save(const char* path,
+                                                core::Span<const SkinVertex> skin) {
+    using SaveResult = core::Result<core::Unit, const char*>;
+
+    const u64 payload = skin.size() * sizeof(SkinVertex);
+    core::Arena scratch = core::Arena::with_capacity(sizeof(SkinHeader) + payload + 64);
+    const core::Span<u8> bytes = scratch.alloc_n<u8>(sizeof(SkinHeader) + payload);
+
+    SkinHeader header{SKIN_MAGIC, static_cast<u32>(skin.size())};
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    std::memcpy(bytes.data() + sizeof(header), skin.data(), payload);
+
+    core::Result<core::Unit, const char*> written =
+        core::write_entire_file(path, core::Span<const u8>(bytes.data(), bytes.size()));
+    if (written.is_err()) {
+        return SaveResult::err(written.error());
+    }
+    return SaveResult::ok(core::Unit{});
+}
+
+core::Result<core::Span<const SkinVertex>, const char*> skin_load(core::Arena& arena,
+                                                                  const char* path) {
+    using LoadResult = core::Result<core::Span<const SkinVertex>, const char*>;
+
+    core::Result<core::Span<u8>, const char*> read = core::read_entire_file(arena, path);
+    if (read.is_err()) {
+        return LoadResult::err(read.error());
+    }
+    const core::Span<u8> bytes = read.value();
+    if (bytes.size() < sizeof(SkinHeader)) {
+        return LoadResult::err("skin file too small");
+    }
+    SkinHeader header;
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.magic != SKIN_MAGIC) {
+        return LoadResult::err("not a native skin");
+    }
+    if (bytes.size() != sizeof(SkinHeader) + static_cast<u64>(header.count) * sizeof(SkinVertex)) {
+        return LoadResult::err("skin length does not match header");
+    }
+
+    const core::Span<SkinVertex> skin = arena.alloc_n<SkinVertex>(header.count);
+    std::memcpy(skin.data(), bytes.data() + sizeof(header), header.count * sizeof(SkinVertex));
+    return LoadResult::ok(core::Span<const SkinVertex>(skin.data(), skin.size()));
+}
 
 core::Result<core::Unit, const char*> mesh_save(const char* path, const MeshData& mesh) {
     using SaveResult = core::Result<core::Unit, const char*>;

@@ -56,6 +56,30 @@ int main(int argc, char** argv) {
                         static_cast<unsigned long long>(model.textures.size()));
     }
 
+    if (model.skeleton.joint_count > 0) {
+        std::snprintf(path, sizeof(path), "%s.uskel", out_base);
+        if (anim::skeleton_save(path, model.skeleton).is_err()) {
+            core::log_errorf("um_import: could not write %s", path);
+            return 1;
+        }
+        std::snprintf(path, sizeof(path), "%s.uskin", out_base);
+        if (asset::skin_save(path, model.skin).is_err()) {
+            core::log_errorf("um_import: could not write %s", path);
+            return 1;
+        }
+        for (u64 c = 0; c < model.clips.size(); ++c) {
+            std::snprintf(path, sizeof(path), "%s.%llu.uclip", out_base,
+                          static_cast<unsigned long long>(c));
+            if (anim::clip_save(path, model.clips[c], model.skeleton.joint_count).is_err()) {
+                core::log_errorf("um_import: could not write %s", path);
+                return 1;
+            }
+        }
+        core::log_infof("um_import: wrote skeleton (%u joints) and %llu clips",
+                        model.skeleton.joint_count,
+                        static_cast<unsigned long long>(model.clips.size()));
+    }
+
     core::Vec3 lo = model.mesh.vertices[0].pos;
     core::Vec3 hi = lo;
     for (u64 i = 1; i < model.mesh.vertices.size(); ++i) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "anim/anim.h"
 #include "core/arena.h"
 #include "core/result.h"
 #include "core/span.h"
@@ -50,12 +51,37 @@ struct TextureData {
     core::Span<const u8> rgba;
 };
 
-/// A model imported from glTF: one merged mesh in per-material submeshes, and
-/// the base color textures those submeshes reference.
+/// Per-vertex skinning data: four joint indices and weights, parallel to the
+/// mesh's vertex array.
+struct SkinVertex {
+    u16 joints[4] = {0, 0, 0, 0};
+    f32 weights[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+};
+
+static_assert(sizeof(SkinVertex) == 24, "SkinVertex layout must stay file-stable");
+
+/// A model imported from glTF: one merged mesh in per-material submeshes, the
+/// base color textures those submeshes reference, and, when the source is
+/// rigged, its skin weights, skeleton, and animation clips.
 struct Model {
     MeshData mesh;
     core::Span<const TextureData> textures;
+    core::Span<const SkinVertex> skin;  ///< Empty when the model is unskinned.
+    core::Span<const anim::Clip> clips;
+    anim::Skeleton skeleton;  ///< joint_count 0 when the model is unskinned.
 };
+
+/// Write skin vertices in the native format read by skin_load.
+/// # Errors
+/// A static message when the file cannot be written.
+[[nodiscard]] core::Result<core::Unit, const char*> skin_save(const char* path,
+                                                              core::Span<const SkinVertex> skin);
+
+/// Load native skin vertices written by skin_save, backed by `arena`.
+/// # Errors
+/// A static message when the file is missing, truncated, or not a skin.
+[[nodiscard]] core::Result<core::Span<const SkinVertex>, const char*> skin_load(core::Arena& arena,
+                                                                                const char* path);
 
 /// Import a .gltf or .glb file. All primitives of the default scene are merged
 /// into one vertex and index pool with node transforms applied, grouped into

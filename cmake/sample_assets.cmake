@@ -58,6 +58,17 @@ foreach(_uri IN LISTS _sponza_uris)
     endif()
 endforeach()
 
+# The Khronos Fox: a small rigged, animated model, the canonical skinning test.
+set(FOX_URL
+    "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb")
+set(FOX_SHA256 "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7")
+set(FOX_GLB "${CMAKE_BINARY_DIR}/sample/Fox.glb")
+
+if(NOT EXISTS "${FOX_GLB}")
+    message(STATUS "Downloading sample asset: Fox.glb")
+    file(DOWNLOAD "${FOX_URL}" "${FOX_GLB}" EXPECTED_HASH SHA256=${FOX_SHA256})
+endif()
+
 set(ASSET_DIR "${CMAKE_BINARY_DIR}/assets")
 file(MAKE_DIRECTORY "${ASSET_DIR}")
 
@@ -73,5 +84,11 @@ add_custom_command(
     DEPENDS um_import "${SPONZA_GLTF}"
     COMMENT "um_import sponza"
     VERBATIM)
+add_custom_command(
+    OUTPUT "${ASSET_DIR}/fox.umesh"
+    COMMAND um_import "${FOX_GLB}" "${ASSET_DIR}/fox"
+    DEPENDS um_import "${FOX_GLB}"
+    COMMENT "um_import fox"
+    VERBATIM)
 add_custom_target(sample_assets
-    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/sponza.umesh")
+    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/sponza.umesh" "${ASSET_DIR}/fox.umesh")
