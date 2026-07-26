@@ -6,6 +6,7 @@
 #include "core/array.h"
 #include "core/assert.h"
 #include "core/log.h"
+#include "core/pool.h"
 #include "core/result.h"
 #include "core/span.h"
 #include "core/timer.h"
@@ -107,12 +108,73 @@ static void test_timer_monotonic() {
     ASSERT(t1 >= t0);
 }
 
+static void test_pool_insert_get_remove() {
+    Arena a = Arena::with_capacity(1u << 16);
+    Pool<u32> pool = Pool<u32>::with_capacity(a, 4);
+    ASSERT(pool.size() == 0);
+    ASSERT(pool.capacity() == 4);
+
+    const Handle<u32> h1 = pool.insert(11);
+    const Handle<u32> h2 = pool.insert(22);
+    ASSERT(pool.size() == 2);
+    ASSERT(*pool.get(h1) == 11);
+    ASSERT(*pool.get(h2) == 22);
+
+    pool.remove(h1);
+    ASSERT(pool.size() == 1);
+    ASSERT(pool.get(h1) == nullptr);  // stale handle resolves to null
+    ASSERT(*pool.get(h2) == 22);      // unrelated handle unaffected
+}
+
+static void test_pool_stale_after_reuse() {
+    Arena a = Arena::with_capacity(1u << 16);
+    Pool<u32> pool = Pool<u32>::with_capacity(a, 2);
+
+    const Handle<u32> old = pool.insert(1);
+    pool.remove(old);
+
+    // The freed slot is reused, but the old handle must not see the newcomer.
+    const Handle<u32> fresh = pool.insert(2);
+    ASSERT(fresh.index == old.index);
+    ASSERT(fresh.gen != old.gen);
+    ASSERT(pool.get(old) == nullptr);
+    ASSERT(*pool.get(fresh) == 2);
+}
+
+static void test_pool_fill_and_drain() {
+    Arena a = Arena::with_capacity(1u << 16);
+    Pool<u32> pool = Pool<u32>::with_capacity(a, 8);
+
+    Handle<u32> handles[8];
+    for (u32 i = 0; i < 8; ++i) {
+        handles[i] = pool.insert(i * 10);
+    }
+    ASSERT(pool.size() == 8);
+    for (u32 i = 0; i < 8; ++i) {
+        ASSERT(*pool.get(handles[i]) == i * 10);
+        pool.remove(handles[i]);
+    }
+    ASSERT(pool.size() == 0);
+
+    // Fully drained pool accepts a full refill.
+    for (u32 i = 0; i < 8; ++i) {
+        (void)pool.insert(i);
+    }
+    ASSERT(pool.size() == 8);
+
+    ASSERT(pool.get(Handle<u32>::none()) == nullptr);
+    ASSERT(!Handle<u32>::none().is_some());
+}
+
 int main() {
     test_arena_alignment_and_rewind();
     test_permanent_arena_stable_over_frames();
     test_array();
     test_result();
     test_timer_monotonic();
+    test_pool_insert_get_remove();
+    test_pool_stale_after_reuse();
+    test_pool_fill_and_drain();
     log_info("core_tests: all passed");
     return 0;
 }
