@@ -41,6 +41,11 @@ constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landin
 constexpr f32 MANTLE_REACH = 1.3f;   // highest ledge that can be vaulted
 constexpr f32 MANTLE_MARGIN = 0.5f;  // extra launch speed past the ledge lip
 
+// Ledge climb. Holding jump against a wall whose top is within reach pulls the
+// player up it, slower than a jump but sure. The mantle takes over at the lip.
+constexpr f32 CLIMB_REACH = 3.0f;  // wall top at most this far above the feet
+constexpr f32 CLIMB_SPEED = 3.5f;  // upward speed while climbing
+
 constexpr f32 LAND_IMPACT_DECAY = 0.85f;  // per-tick decay of the landing dip
 
 // Wallrun. Speed builds the longer you run, which is the Titanfall signature.
@@ -182,9 +187,11 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     // speed the longer you run, and allow a launch off it.
     f32 wall_nx = 0.0f;
     f32 wall_nz = 0.0f;
+    f32 wall_top = 0.0f;
+    const bool wall_found = !grounded && find_wall(next.cam_x, next.cam_y, next.cam_z, hull_h,
+                                                   level_boxes(), &wall_nx, &wall_nz, &wall_top);
     bool wallrunning = false;
-    if (!grounded && prev.wallrun_ticks < WALLRUN_MAX_TICKS &&
-        find_wall(next.cam_x, next.cam_y, next.cam_z, hull_h, level_boxes(), &wall_nx, &wall_nz)) {
+    if (wall_found && prev.wallrun_ticks < WALLRUN_MAX_TICKS) {
         const f32 into = next.vel_x * wall_nx + next.vel_z * wall_nz;
         const f32 along_x = next.vel_x - into * wall_nx;
         const f32 along_z = next.vel_z - into * wall_nz;
@@ -209,6 +216,22 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         next.vel_y = -WALLRUN_MAX_FALL;
     }
 
+    // Ledge climb: airborne against a wall whose top is within reach, holding
+    // jump and pushing toward it, rises steadily instead of falling off. The
+    // mantle vaults the lip once it comes within its reach.
+    bool climbing = false;
+    if (wall_found && !wallrunning && jump_down) {
+        const f32 ledge_h = wall_top - next.cam_y;
+        const f32 toward = -(wish_x * wall_nx + wish_z * wall_nz);
+        if (ledge_h > 0.0f && ledge_h <= CLIMB_REACH && toward > 0.3f) {
+            climbing = true;
+            next.vel_y = CLIMB_SPEED;
+            // Hug the wall and drop horizontal drift, trading speed for safety.
+            next.vel_x = -wall_nx * WALL_PULL;
+            next.vel_z = -wall_nz * WALL_PULL;
+        }
+    }
+
     // Jumping. Ground jump auto-hops while held or fires from the buffer
     // (friction was skipped above). A fresh press just after walking off a ledge
     // gets the coyote jump. Wall jump and double jump fire on a fresh press.
@@ -228,6 +251,9 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
             next.vel_z += wall_nz * WALLJUMP_PUSH;
             jump_buffer = 0;
         }
+    } else if (climbing) {
+        // Wall contact refills the double jump; the held button climbs.
+        next.air_jumps = MAX_AIR_JUMPS;
     } else if (jump_pressed && coyote_ok) {
         // Coyote jump. The ledge was left a moment ago, treat it as a ground
         // jump and keep the double jump in reserve.
@@ -334,6 +360,8 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         next.state = (ducked && final_speed > SLIDE_MIN_SPEED) ? MoveState::Slide : MoveState::Ground;
     } else if (wallrun_active) {
         next.state = MoveState::Wallrun;
+    } else if (climbing) {
+        next.state = MoveState::Climb;
     } else {
         next.state = MoveState::Air;
     }
@@ -343,7 +371,8 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     if (next.state == MoveState::Air) {
         f32 nx = 0.0f;
         f32 nz = 0.0f;
-        if (find_wall(next.cam_x, next.cam_y, next.cam_z, hull_h, boxes, &nx, &nz)) {
+        f32 top = 0.0f;
+        if (find_wall(next.cam_x, next.cam_y, next.cam_z, hull_h, boxes, &nx, &nz, &top)) {
             next.wall_nx = nx;
             next.wall_nz = nz;
         }

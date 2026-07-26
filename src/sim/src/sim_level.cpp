@@ -8,7 +8,7 @@ bool hull_overlaps(f32 x, f32 y, f32 z, f32 height, const Aabb& b) {
 }
 
 bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes, f32* out_nx,
-               f32* out_nz) {
+               f32* out_nz, f32* out_top) {
     for (u64 i = 0; i < boxes.size(); ++i) {
         const Aabb& b = boxes[i];
         if (!(y < b.max_y && y + height > b.min_y)) {
@@ -21,12 +21,14 @@ bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes, f3
                 (x - HULL_HALF_WIDTH) - b.max_x <= WALL_DETECT_DIST) {
                 *out_nx = 1.0f;
                 *out_nz = 0.0f;
+                *out_top = b.max_y;
                 return true;
             }
             if (b.min_x - (x + HULL_HALF_WIDTH) >= -0.01f &&
                 b.min_x - (x + HULL_HALF_WIDTH) <= WALL_DETECT_DIST) {
                 *out_nx = -1.0f;
                 *out_nz = 0.0f;
+                *out_top = b.max_y;
                 return true;
             }
         }
@@ -35,12 +37,14 @@ bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes, f3
                 (z - HULL_HALF_WIDTH) - b.max_z <= WALL_DETECT_DIST) {
                 *out_nx = 0.0f;
                 *out_nz = 1.0f;
+                *out_top = b.max_y;
                 return true;
             }
             if (b.min_z - (z + HULL_HALF_WIDTH) >= -0.01f &&
                 b.min_z - (z + HULL_HALF_WIDTH) <= WALL_DETECT_DIST) {
                 *out_nx = 0.0f;
                 *out_nz = -1.0f;
+                *out_top = b.max_y;
                 return true;
             }
         }

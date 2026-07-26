@@ -152,14 +152,16 @@ int main(int argc, char** argv) {
             const f64 hspeed =
                 static_cast<f64>(curr_world.vel_x) * static_cast<f64>(curr_world.vel_x) +
                 static_cast<f64>(curr_world.vel_z) * static_cast<f64>(curr_world.vel_z);
-            const char* state_names[4] = {"ground", "slide", "air", "wallrun"};
+            const char* state_names[5] = {"ground", "slide", "air", "wallrun", "climb"};
             core::log_infof(
                 "t=%.0fs  fps=%.0f  cpu=%.2fms  gpu=%.2fms  ticks/s=%.0f  speed=%.1f  %s",
                 static_cast<f64>(now_ns - start_ns) * 1e-9,
                 static_cast<f64>(frames - frames_at_report) / dt, cpu_ms,
                 static_cast<f64>(renderer.last_gpu_ms()),
                 static_cast<f64>(total_ticks - ticks_at_report) / dt, __builtin_sqrt(hspeed),
-                state_names[static_cast<u8>(curr_world.state) & 3]);
+                state_names[static_cast<u8>(curr_world.state) < 5
+                                ? static_cast<u8>(curr_world.state)
+                                : 2]);
             report_ns = now_ns;
             ticks_at_report = total_ticks;
             frames_at_report = frames;

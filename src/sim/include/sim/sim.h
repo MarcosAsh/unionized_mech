@@ -68,7 +68,7 @@ static_assert(std::is_trivially_copyable_v<InputCmd>);
 static_assert(std::is_standard_layout_v<InputCmd>);
 
 /// The character's movement mode this tick.
-enum class MoveState : u8 { Ground, Slide, Air, Wallrun };
+enum class MoveState : u8 { Ground, Slide, Air, Wallrun, Climb };
 
 /// The whole simulation state. Scalars stand in for vectors and quaternions
 /// until the M1 math module lands. Trivially copyable so it can be snapshotted

@@ -94,7 +94,7 @@ void add_box(core::Array<Vertex>& verts, core::Array<u32>& indices, f32 x0, f32 
 }
 
 void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
-    constexpr i32 N = 60;
+    constexpr i32 N = 100;
     constexpr f32 CELL = 2.0f;
     const f32 half = static_cast<f32>(N) * CELL * 0.5f;
     for (i32 i = 0; i < N; ++i) {
@@ -102,8 +102,16 @@ void build_scene(core::Array<Vertex>& verts, core::Array<u32>& indices) {
             const f32 x = -half + static_cast<f32>(i) * CELL;
             const f32 z = -half + static_cast<f32>(j) * CELL;
             const bool light = ((i + j) & 1) != 0;
-            const f32 shade = light ? 0.38f : 0.24f;
-            add_quad(verts, indices, x, z, CELL, shade, shade, shade + 0.04f);
+            f32 r = light ? 0.38f : 0.24f;
+            f32 g = r;
+            f32 b = r + 0.04f;
+            // A warm walkway from the plaza south to the Sponza atrium.
+            if ((i == 49 || i == 50) && z < -16.0f) {
+                r = light ? 0.52f : 0.44f;
+                g = light ? 0.42f : 0.34f;
+                b = 0.26f;
+            }
+            add_quad(verts, indices, x, z, CELL, r, g, b);
         }
     }
 
@@ -129,8 +137,8 @@ struct SceneModels {
 };
 
 Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch) {
-    core::Array<Vertex> verts = scratch.make_array<Vertex>(16384);
-    core::Array<u32> indices = scratch.make_array<u32>(32768);
+    core::Array<Vertex> verts = scratch.make_array<Vertex>(65536);
+    core::Array<u32> indices = scratch.make_array<u32>(131072);
     build_scene(verts, indices);
 
     Scene scene;

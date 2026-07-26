@@ -115,6 +115,29 @@ static void test_mantle_vaults_ledge() {
     ASSERT(topped);
 }
 
+// Holding jump against a 3m wall climbs it. Too tall for jump plus mantle
+// alone (jump apex 1.2m leaves the lip 1.8m away, past mantle reach), so
+// reaching the top proves the ledge climb works.
+static void test_ledge_climb() {
+    World w{};
+    w.cam_x = -18.0f;
+    w.cam_z = -34.0f;  // south of the 3m mantle stair at z=-36
+    bool topped = false;
+    for (u32 i = 0; i < 300; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.move_y = 1;  // yaw 0 faces -Z, straight at the wall
+        c.buttons = static_cast<u16>(Button::Jump);
+        World next{};
+        simulate(w, c, next);
+        w = next;
+        if (w.on_ground != 0 && w.cam_y == 3.0f) {
+            topped = true;
+        }
+    }
+    ASSERT(topped);
+}
+
 // A tape written to disk and loaded back must replay to the identical hash.
 static void test_tape_round_trip() {
     constexpr u32 N = 200;
@@ -152,6 +175,7 @@ int main() {
     test_tick_advances();
     test_fixed_timestep();
     test_mantle_vaults_ledge();
+    test_ledge_climb();
     test_tape_round_trip();
     core::log_info("sim_tests: all passed");
     return 0;

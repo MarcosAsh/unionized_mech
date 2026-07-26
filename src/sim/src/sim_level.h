@@ -21,8 +21,9 @@ constexpr f32 WALL_DETECT_DIST = 0.6f;
 [[nodiscard]] bool hull_overlaps(f32 x, f32 y, f32 z, f32 height, const Aabb& b);
 
 /// Look for a vertical box face within reach on a horizontal side of the hull
-/// at (x, y, z). On success writes the outward wall normal and returns true.
+/// at (x, y, z). On success writes the outward wall normal and the wall's top
+/// height, and returns true.
 [[nodiscard]] bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes,
-                             f32* out_nx, f32* out_nz);
+                             f32* out_nx, f32* out_nz, f32* out_top);
 
 }  // namespace sim
