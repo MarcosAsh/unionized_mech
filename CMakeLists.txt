@@ -32,6 +32,7 @@ FetchContent_MakeAvailable(VulkanHeaders)
 
 add_subdirectory(src/core)
 add_subdirectory(src/sim)
+add_subdirectory(src/asset)
 add_subdirectory(src/platform)
 add_subdirectory(src/gpu)
 add_subdirectory(src/render)
@@ -47,6 +48,13 @@ target_link_libraries(um_headless PRIVATE sim)
 add_executable(gpu_probe tools/gpu_probe.cpp)
 target_link_libraries(gpu_probe PRIVATE gpu)
 
+# Offline asset importer: glTF to the native formats.
+add_executable(um_import tools/um_import.cpp)
+target_link_libraries(um_import PRIVATE asset)
+
+include(sample_assets)
+add_dependencies(unionized_mech sample_assets)
+
 enable_testing()
 
 add_executable(core_tests tests/core_tests.cpp)
@@ -60,6 +68,10 @@ add_test(NAME sim_tests COMMAND sim_tests)
 add_executable(math_tests tests/math_tests.cpp)
 target_link_libraries(math_tests PRIVATE core)
 add_test(NAME math_tests COMMAND math_tests)
+
+add_executable(asset_tests tests/asset_tests.cpp)
+target_link_libraries(asset_tests PRIVATE asset)
+add_test(NAME asset_tests COMMAND asset_tests)
 
 # Still to land in M0:
 #   gpu swapchain, frame contexts, allocator, bindless set (next: clear + present)

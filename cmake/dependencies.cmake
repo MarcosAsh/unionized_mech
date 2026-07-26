@@ -32,13 +32,16 @@ FetchContent_Declare(SDL3
     GIT_TAG        ${SDL_TAG}
     GIT_SHALLOW    TRUE)
 
-# Used by src/asset (M2). Declared now so the pin is recorded.
+# Used by src/asset (M2). Header-only; SOURCE_SUBDIR points at a directory with
+# no CMakeLists so MakeAvailable fetches without building upstream's project.
 FetchContent_Declare(cgltf
     GIT_REPOSITORY https://github.com/jkuhlmann/cgltf
     GIT_TAG        ${CGLTF_TAG}
-    GIT_SHALLOW    TRUE)
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  fetch-only)
 
 # Used by src/asset (M2). stb has no release tags, so it is pinned by commit.
 FetchContent_Declare(stb
     GIT_REPOSITORY https://github.com/nothings/stb
-    GIT_TAG        ${STB_COMMIT})
+    GIT_TAG        ${STB_COMMIT}
+    SOURCE_SUBDIR  fetch-only)
