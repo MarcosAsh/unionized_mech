@@ -4,6 +4,7 @@ add_library(sim STATIC
     src/sim_combat.cpp
     src/sim_level.cpp
     src/sim_math.cpp
+    src/sim_mech.cpp
     src/sim_move.cpp
     src/sim_nav.cpp
     src/sim_tape.cpp)

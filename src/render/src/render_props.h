@@ -43,6 +43,10 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 /// character art replaces it later.
 [[nodiscard]] RenderModel make_trooper(gpu::Renderer& gpu, u32 fallback_texture);
 
+/// The union mech chassis: a heavy biped of boxes matching the sim's mech
+/// hull, tinted neutral when dormant and by team when piloted.
+[[nodiscard]] RenderModel make_mech(gpu::Renderer& gpu, u32 fallback_texture);
+
 /// A unit tracer beam: a thin bright box from the origin one unit along -Z,
 /// stretched to the shot at queue time.
 [[nodiscard]] RenderModel make_tracer(gpu::Renderer& gpu, u32 fallback_texture);

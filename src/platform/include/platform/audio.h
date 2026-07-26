@@ -9,9 +9,12 @@ namespace platform {
 /// assets to load.
 enum class Sound : u8 {
     Fire,
+    MechFire,
     Hit,
     Hurt,
     Death,
+    Union,
+    Boom,
     Win,
     Lose,
     Count,

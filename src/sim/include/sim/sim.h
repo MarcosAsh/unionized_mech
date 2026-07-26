@@ -111,9 +111,9 @@ struct Character {
     u8 shot_age = 255;     ///< Ticks since this character last fired, saturating.
     u8 shot_hit = 0;       ///< 1 when the last shot damaged someone.
     u8 hurt_age = 255;     ///< Ticks since this character was last damaged.
+    u8 merged = 0;         ///< 1 while this robot's processes run the mech.
+    u8 use_was_down = 0;   ///< Use button state last tick, for edge detection.
     u8 pad0 = 0;
-    u8 pad1 = 0;
-    u8 pad2 = 0;
 };
 
 static_assert(sizeof(Character) == 92, "Character layout must stay packed for hashing");
@@ -124,12 +124,37 @@ static_assert(sizeof(Character) == 92, "Character layout must stay packed for ha
 /// Kills a team needs to win the match.
 constexpr u32 WIN_KILLS = 30;
 
+/// The mech's pilot slot value while nobody is merged with it.
+constexpr u8 NO_PILOT = 0xFF;
+
+/// The big chassis at the arena centre that either side's robots can union
+/// with: walk close, press use, and your processes migrate in. Packed for
+/// byte-wise hashing like Character.
+struct Mech {
+    f32 x = 0.0f;  ///< Feet position, like Character.
+    f32 y = 0.0f;
+    f32 z = 0.0f;
+    f32 yaw = 0.0f;
+    f32 vx = 0.0f;
+    f32 vy = 0.0f;
+    f32 vz = 0.0f;
+    i16 health = 300;
+    u16 respawn_ticks = 0;  ///< Rebuild countdown while destroyed.
+    u8 pilot = NO_PILOT;    ///< Character index of the merged robot.
+    u8 alive = 1;
+    u8 on_ground = 0;
+    u8 pad0 = 0;
+};
+
+static_assert(sizeof(Mech) == 36, "Mech layout must stay packed for hashing");
+
 struct World {
     TickId tick;
     u32 seed = 0x4d454348u;  ///< Feeds every in-simulation random choice.
     u16 end_ticks = 0;  ///< Countdown of the end-of-match banner phase.
     u8 winner = 0;      ///< 0 none, otherwise winning team + 1.
     u8 pad = 0;
+    Mech mech;
     Character chars[MAX_PLAYERS];
 
     /// The local player's character.

@@ -50,8 +50,12 @@ bool ray_vs_aabb(f32 ox, f32 oy, f32 oz, f32 dx, f32 dy, f32 dz, const Aabb& b, 
     return true;
 }
 
-// A character's hull as a box.
+// A character's hull as a box; a merged robot presents the mech's hull.
 Aabb character_hull(const Character& c) {
+    if (c.merged != 0) {
+        return Aabb{c.x - MECH_HALF_WIDTH, c.y, c.z - MECH_HALF_WIDTH,
+                    c.x + MECH_HALF_WIDTH, c.y + MECH_HEIGHT, c.z + MECH_HALF_WIDTH};
+    }
     const f32 h = c.ducked != 0 ? DUCK_HEIGHT : HULL_HEIGHT;
     return Aabb{c.x - HULL_HALF_WIDTH, c.y, c.z - HULL_HALF_WIDTH,
                 c.x + HULL_HALF_WIDTH, c.y + h, c.z + HULL_HALF_WIDTH};
@@ -85,7 +89,10 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         if (!fired[i] || shooter.alive == 0 || shooter.fire_cooldown > 0) {
             continue;
         }
-        shooter.fire_cooldown = FIRE_COOLDOWN_TICKS;
+        // A merged robot fires the chassis cannon: slower, far heavier.
+        const bool mech_gun = shooter.merged != 0;
+        const i16 damage = mech_gun ? 60 : SHOT_DAMAGE;
+        shooter.fire_cooldown = mech_gun ? 18 : FIRE_COOLDOWN_TICKS;
 
         const f32 cp = sim_cos(shooter.pitch);
         const f32 dx = sim_sin(shooter.yaw) * cp;
@@ -128,12 +135,24 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         shooter.shot_hit = hit >= 0 ? 1 : 0;
         if (hit >= 0) {
             Character& target = next.chars[hit];
-            target.health = static_cast<i16>(target.health - SHOT_DAMAGE);
             target.hurt_age = 0;
-            if (target.health <= 0) {
-                target.alive = 0;
-                target.respawn_ticks = RESPAWN_TICKS;
-                shooter.kills += 1;
+            if (target.merged != 0) {
+                // Damage to a merged robot lands on the chassis. Its pilot
+                // evacuates intact when the chassis dies; wrecking it scores.
+                next.mech.health = static_cast<i16>(next.mech.health - damage);
+                if (next.mech.health <= 0) {
+                    next.mech.alive = 0;
+                    next.mech.respawn_ticks = MECH_REBUILD_TICKS;
+                    eject_pilot(next, static_cast<u32>(hit));
+                    shooter.kills += 1;
+                }
+            } else {
+                target.health = static_cast<i16>(target.health - damage);
+                if (target.health <= 0) {
+                    target.alive = 0;
+                    target.respawn_ticks = RESPAWN_TICKS;
+                    shooter.kills += 1;
+                }
             }
         }
     }

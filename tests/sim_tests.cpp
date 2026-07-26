@@ -351,6 +351,68 @@ static void test_bot_fights_back() {
     ASSERT(cur.chars[0].health < 100);
 }
 
+// The union loop end to end: merge into the mech by pressing use beside it,
+// fire the chassis cannon (60 damage), eject through the top hatch, re-merge,
+// and survive the chassis being shot out from underneath by an enemy bot.
+static void test_union_mech() {
+    World w{};
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 3.0f;
+    w.chars[0].z = 0.0f;  // beside the mech at the origin
+    w.chars[1].x = 0.0f;
+    w.chars[1].z = -6.0f;  // an enemy bot in front of it
+    w.chars[1].team = 1;
+    ASSERT(w.mech.alive == 1 && w.mech.pilot == NO_PILOT);
+
+    InputCmd use{};
+    use.buttons = static_cast<u16>(Button::Use);
+    World cur{};
+    simulate(w, use, cur);
+    ASSERT(cur.player().merged == 1);
+    ASSERT(cur.mech.pilot == 0);
+    ASSERT(cur.player().x == cur.mech.x);
+
+    // The chassis cannon: from the mech's high eye the shot must angle down
+    // to the bot. One hit takes 60 of its 100.
+    InputCmd fire{};
+    fire.buttons = static_cast<u16>(Button::Fire);
+    fire.look_dy = -160;  // pitch down toward the shorter target
+    World after_fire{};
+    simulate(cur, fire, after_fire);
+    ASSERT(after_fire.chars[1].health <= 40);
+
+    // Release, then press use again: eject out of the top hatch.
+    World released{};
+    simulate(after_fire, InputCmd{}, released);
+    World ejected{};
+    simulate(released, use, ejected);
+    ASSERT(ejected.player().merged == 0);
+    ASSERT(ejected.mech.pilot == NO_PILOT);
+    ASSERT(ejected.player().y > 4.0f);
+
+    // Re-merge and idle: the enemy bot chews the chassis down. The pilot must
+    // pop out alive when it dies, and the wreck must score for the shooter.
+    World again{};
+    simulate(ejected, InputCmd{}, again);
+    World merged{};
+    simulate(again, use, merged);
+    ASSERT(merged.player().merged == 1);
+    World state = merged;
+    for (u32 i = 0; i < 1500 && state.mech.alive != 0; ++i) {
+        World next{};
+        simulate(state, InputCmd{}, next);
+        state = next;
+    }
+    ASSERT(state.mech.alive == 0);
+    ASSERT(state.player().alive == 1);
+    ASSERT(state.player().merged == 0);
+    ASSERT(state.chars[1].kills >= 1);
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
@@ -361,6 +423,7 @@ int main() {
     test_tape_round_trip();
     test_hitscan_kills();
     test_bot_fights_back();
+    test_union_mech();
     test_map_round_trip();
     test_nav_pathing();
     core::log_info("sim_tests: all passed");

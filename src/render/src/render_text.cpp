@@ -148,6 +148,22 @@ void hud_queue(RenderModel& overlay, const Font& font, u32 slot, const sim::Worl
     text_queue(overlay, font, slot, 0.96f - text_width(buf, 0.08f, aspect), 0.87f, 0.08f, aspect,
                buf, WHITE);
 
+    // Merged: the chassis core readout. Otherwise, prompt beside the mech.
+    const sim::Mech& mech = world.mech;
+    if (me.merged != 0) {
+        std::snprintf(buf, sizeof(buf), "CORE %d", static_cast<int>(mech.health));
+        text_queue(overlay, font, slot, -0.96f, 0.76f, 0.07f, aspect, buf,
+                   mech.health <= 80 ? RED : WHITE);
+    } else if (me.alive != 0 && mech.alive != 0 && mech.pilot == sim::NO_PILOT) {
+        const f32 dx = me.x - mech.x;
+        const f32 dz = me.z - mech.z;
+        if (dx * dx + dz * dz < 49.0f) {
+            const char* line = "E - UNION";
+            text_queue(overlay, font, slot, -0.5f * text_width(line, 0.08f, aspect), 0.30f,
+                       0.08f, aspect, line, WHITE);
+        }
+    }
+
     // Respawn countdown while dead; the winner banner overrides it.
     if (world.winner != 0) {
         const char* line = world.winner == 1 ? "BLUE WINS" : "ORANGE WINS";

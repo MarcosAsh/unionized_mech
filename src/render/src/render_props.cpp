@@ -163,6 +163,42 @@ RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {
     return model_from_data(gpu, mesh, fallback_texture);
 }
 
+RenderModel make_mech(gpu::Renderer& gpu, u32 fallback_texture) {
+    // Legs, torso, head, cannon. The silhouette fills the sim's 3.2 x 4.4m
+    // mech hull so what you see is what gets hit.
+    static asset::MeshVertex verts[5 * 24];
+    static u32 indices[5 * 36];
+    u32 vc = 0;
+    u32 ic = 0;
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{-0.62f, 1.0f, 0.0f},
+                 core::Vec3{0.38f, 1.0f, 0.5f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.62f, 1.0f, 0.0f},
+                 core::Vec3{0.38f, 1.0f, 0.5f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 2.8f, 0.0f},
+                 core::Vec3{1.25f, 0.85f, 0.8f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 4.05f, 0.0f},
+                 core::Vec3{0.4f, 0.32f, 0.4f});
+    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.85f, 3.0f, -1.0f},
+                 core::Vec3{0.2f, 0.2f, 1.0f});
+    static asset::Submesh sub;
+    sub.index_count = 5 * 36;
+    sub.texture = asset::NO_TEXTURE;
+    sub.color[0] = 0.62f;
+    sub.color[1] = 0.64f;
+    sub.color[2] = 0.68f;
+    sub.bounds_min[0] = -2.2f;
+    sub.bounds_min[1] = 0.0f;
+    sub.bounds_min[2] = -2.2f;
+    sub.bounds_max[0] = 2.2f;
+    sub.bounds_max[1] = 4.6f;
+    sub.bounds_max[2] = 2.2f;
+    asset::MeshData mesh;
+    mesh.vertices = core::Span<const asset::MeshVertex>(verts, vc);
+    mesh.indices = core::Span<const u32>(indices, ic);
+    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
+    return model_from_data(gpu, mesh, fallback_texture);
+}
+
 RenderModel make_tracer(gpu::Renderer& gpu, u32 fallback_texture) {
     static asset::MeshVertex verts[24];
     static u32 indices[36];

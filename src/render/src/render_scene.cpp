@@ -65,7 +65,10 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const f32 pitch = lerp(prev.player().pitch, curr.player().pitch, alpha);
 
     // The eye dips on landing by the stored impact, easing back as it decays.
-    f32 eye_height = curr.player().ducked != 0 ? 0.9f : 1.7f;
+    // A merged robot looks out of the chassis head; must match sim MECH_EYE.
+    f32 eye_height = curr.player().merged != 0 ? 3.9f
+                     : curr.player().ducked != 0 ? 0.9f
+                                                 : 1.7f;
     f32 impact = curr.player().land_impact;
     if (impact > 12.0f) {
         impact = 12.0f;
@@ -110,6 +113,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->duck);
     model_begin(models_->viewmodel);
     model_begin(models_->trooper);
+    model_begin(models_->mech);
     model_begin(models_->tracer);
     model_begin(models_->tracer_vm);
     model_begin(models_->hitmarker);
@@ -122,6 +126,19 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     }
     // Everyone else in the match, tinted by team.
     constexpr f32 TEAM_TINTS[2][4] = {{0.30f, 0.50f, 1.00f, 1.0f}, {1.00f, 0.42f, 0.22f, 1.0f}};
+
+    // The chassis, unless the player is looking out of it. Neutral gunmetal
+    // while dormant, team-tinted while a robot runs it.
+    const sim::Mech& mech = curr.mech;
+    if (mech.alive != 0 && mech.pilot != 0) {
+        constexpr f32 NEUTRAL[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        const f32* mech_tint =
+            mech.pilot == sim::NO_PILOT ? NEUTRAL : TEAM_TINTS[curr.chars[mech.pilot].team & 1];
+        const core::Quat mech_rot = core::Quat::from_axis_half(
+            core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(mech.yaw * 0.5f), std::cos(mech.yaw * 0.5f));
+        model_queue_tinted(models_->mech, frame.slot, core::Vec3{mech.x, mech.y, mech.z},
+                           mech_rot, 1.0f, mech_tint);
+    }
     for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
         const sim::Character& other = curr.chars[i];
         if (other.alive == 0) {
@@ -220,11 +237,11 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[7] = {&models_->duck,      &models_->viewmodel,
-                                         &models_->trooper,   &models_->tracer,
-                                         &models_->tracer_vm, &models_->hitmarker,
-                                         &models_->overlay};
-    for (u32 i = 0; i < 7; ++i) {
+    const RenderModel* fill_models[8] = {&models_->duck,      &models_->viewmodel,
+                                         &models_->trooper,   &models_->mech,
+                                         &models_->tracer,    &models_->tracer_vm,
+                                         &models_->hitmarker, &models_->overlay};
+    for (u32 i = 0; i < 8; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -255,6 +272,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot, PASS_CAMERA);
+    model_cull(models_->mech, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot, PASS_CAMERA);
     model_cull(models_->tracer, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->tracer_vm, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
@@ -267,6 +286,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
                frame.slot, PASS_SHADOW);
     model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_SHADOW);
+    model_cull(models_->mech, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
@@ -289,6 +310,15 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                 instances[instance_count++] =
                     make_rt_instance(world, models_->duck_blas.address);
             }
+        }
+        if (models_->mech_blas.handle != VK_NULL_HANDLE && mech.alive != 0 &&
+            mech.pilot != 0) {
+            const core::Quat mech_rot = core::Quat::from_axis_half(
+                core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(mech.yaw * 0.5f),
+                std::cos(mech.yaw * 0.5f));
+            instances[instance_count++] = make_rt_instance(
+                core::Mat4::trs(core::Vec3{mech.x, mech.y, mech.z}, mech_rot),
+                models_->mech_blas.address);
         }
         if (models_->trooper_blas.handle != VK_NULL_HANDLE) {
             for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
@@ -323,7 +353,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     sun_in.level_vbuf = vertices_.bindless_index;
     sun_in.casters[0] = &models_->duck;
     sun_in.casters[1] = &models_->trooper;
-    sun_in.caster_count = 2;
+    sun_in.casters[2] = &models_->mech;
+    sun_in.caster_count = 3;
     sun_in.sun_view_proj = sun_view_proj;
     sun_in.slot = frame.slot;
     record_sun_shadow(sun_in);
@@ -390,6 +421,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const u32 globals_idx = models_->globals.bindless_index;
     model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, globals_idx, frame.slot);
     model_draw_culled(models_->trooper, frame.cmd, mesh_layout_, view_proj, globals_idx,
+                      frame.slot);
+    model_draw_culled(models_->mech, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->tracer, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);

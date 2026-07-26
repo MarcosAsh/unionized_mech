@@ -47,8 +47,10 @@ void audio_events(platform::Audio& audio, const sim::World& before, const sim::W
         if (shooter.shot_age != 0 || shooter.fire_cooldown == 0 || shooter.alive == 0) {
             continue;
         }
+        const platform::Sound bang =
+            shooter.merged != 0 ? platform::Sound::MechFire : platform::Sound::Fire;
         if (i == 0) {
-            audio.play(platform::Sound::Fire, 0.8f);
+            audio.play(bang, shooter.merged != 0 ? 0.9f : 0.8f);
             if (shooter.shot_hit != 0) {
                 audio.play(platform::Sound::Hit, 0.7f);
             }
@@ -57,12 +59,19 @@ void audio_events(platform::Audio& audio, const sim::World& before, const sim::W
             const f32 dz = shooter.z - me.z;
             const f32 d2 = dx * dx + dz * dz;
             if (d2 < 60.0f * 60.0f) {
-                audio.play(platform::Sound::Fire,
-                           (1.0f - __builtin_sqrtf(d2) / 60.0f) * 0.4f);
+                audio.play(bang, (1.0f - __builtin_sqrtf(d2) / 60.0f) * 0.5f);
             }
         }
     }
 
+    if (before.player().merged == 0 && me.merged != 0) {
+        audio.play(platform::Sound::Union, 0.7f);
+    } else if (before.player().merged != 0 && me.merged == 0 && after.mech.alive != 0) {
+        audio.play(platform::Sound::Union, 0.35f);  // eject blip
+    }
+    if (before.mech.alive != 0 && after.mech.alive == 0) {
+        audio.play(platform::Sound::Boom, 1.0f);
+    }
     if (before.player().alive != 0 && me.alive == 0) {
         audio.play(platform::Sound::Death, 0.9f);
     } else if (me.health < before.player().health) {

@@ -45,10 +45,11 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     }
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
         fired[i] = button_down(cmds[i].buttons, Button::Fire);
-        if (next.chars[i].alive != 0) {
+        if (next.chars[i].alive != 0 && next.chars[i].merged == 0) {
             step_character(next.chars[i], prev.chars[i], cmds[i]);
         }
     }
+    step_union(next, cmds);
 
     // During the end-of-match banner the fighting stops; when the countdown
     // runs out a fresh match starts with a shifted seed for variety.
@@ -74,8 +75,10 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
 }
 
 u64 hash(const World& w) {
-    // Character is asserted padding-free, so the world hashes byte-wise.
-    static_assert(sizeof(World) == 12 + sizeof(Character) * MAX_PLAYERS);
+    // Character and Mech are asserted padding-free, so the world hashes
+    // byte-wise.
+    static_assert(sizeof(World) ==
+                  12 + sizeof(Mech) + sizeof(Character) * MAX_PLAYERS);
     return fnv1a(0xcbf29ce484222325ull, &w, sizeof(World));
 }
 

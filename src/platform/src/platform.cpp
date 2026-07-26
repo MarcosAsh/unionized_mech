@@ -135,6 +135,9 @@ sim::InputCmd Window::capture_input(sim::TickId tick) {
     if (keys[SDL_SCANCODE_SPACE]) {
         sim::set_button(buttons, sim::Button::Jump, true);
     }
+    if (keys[SDL_SCANCODE_E]) {
+        sim::set_button(buttons, sim::Button::Use, true);
+    }
     if (keys[SDL_SCANCODE_LCTRL]) {
         sim::set_button(buttons, sim::Button::Crouch, true);
     }

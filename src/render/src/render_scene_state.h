@@ -16,12 +16,14 @@ struct SceneModels {
     RenderModel duck;
     RenderModel viewmodel;
     RenderModel trooper;
+    RenderModel mech;
     RenderModel tracer;
     RenderModel tracer_vm;
     RenderModel hitmarker;
     RenderModel overlay;
     gpu::Blas level_blas;
     gpu::Blas trooper_blas;
+    gpu::Blas mech_blas;
     gpu::Blas duck_blas;
     gpu::Buffer globals;
     SceneGlobals* globals_mapped = nullptr;

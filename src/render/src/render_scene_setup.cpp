@@ -67,6 +67,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
         model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
     scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
+    scene.models_->mech = make_mech(gpu, scene.models_->white_texture);
     scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
     scene.models_->tracer_vm = make_tracer(gpu, scene.models_->white_texture);
     scene.models_->hitmarker = make_hitmarker(gpu, scene.models_->white_texture);
@@ -91,6 +92,10 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
             scene.models_->trooper.vertices.handle, scene.models_->trooper.total_vertices,
             sizeof(asset::MeshVertex), scene.models_->trooper.indices.handle,
             scene.models_->trooper.total_indices);
+        scene.models_->mech_blas = gpu.create_blas(
+            scene.models_->mech.vertices.handle, scene.models_->mech.total_vertices,
+            sizeof(asset::MeshVertex), scene.models_->mech.indices.handle,
+            scene.models_->mech.total_indices);
         gpu.create_tlas(16);
         core::log_info("render: ray traced sun shadows active");
     }

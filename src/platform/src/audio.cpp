@@ -54,6 +54,19 @@ void synth_bank() {
         const f32 punch = std::sin(TAU * (150.0f - 300.0f * t) * t) * std::exp(-t * 32.0f) * 0.8f;
         return crack + punch;
     });
+    bank_len[static_cast<u32>(Sound::MechFire)] =
+        synth(Sound::MechFire, 0.16f, [](f32 t, u32& rng) {
+            const f32 thump = std::sin(TAU * (85.0f - 120.0f * t) * t) * std::exp(-t * 18.0f);
+            return thump * 0.9f + noise(rng) * std::exp(-t * 32.0f) * 0.45f;
+        });
+    bank_len[static_cast<u32>(Sound::Union)] = synth(Sound::Union, 0.3f, [](f32 t, u32&) {
+        const f32 sweep = std::sin(TAU * (220.0f + 900.0f * t) * t) * 0.35f;
+        return sweep * std::exp(-t * 5.0f) + std::sin(TAU * 110.0f * t) * std::exp(-t * 8.0f) * 0.3f;
+    });
+    bank_len[static_cast<u32>(Sound::Boom)] = synth(Sound::Boom, 0.5f, [](f32 t, u32& rng) {
+        return noise(rng) * std::exp(-t * 7.0f) * 0.75f +
+               std::sin(TAU * 55.0f * t) * std::exp(-t * 5.0f) * 0.7f;
+    });
     bank_len[static_cast<u32>(Sound::Hit)] = synth(Sound::Hit, 0.07f, [](f32 t, u32&) {
         return std::sin(TAU * 1320.0f * t) * std::exp(-t * 70.0f) * 0.6f +
                std::sin(TAU * 1980.0f * t) * std::exp(-t * 90.0f) * 0.25f;
