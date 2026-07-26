@@ -82,7 +82,7 @@ void add_mesh_box(asset::MeshVertex* verts, u32* indices, u32* vert_cursor, u32*
 }  // namespace
 
 void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
-    constexpr i32 N = 100;
+    constexpr i32 N = 50;
     constexpr f32 CELL = 2.0f;
     const f32 half = static_cast<f32>(N) * CELL * 0.5f;
     for (i32 i = 0; i < N; ++i) {

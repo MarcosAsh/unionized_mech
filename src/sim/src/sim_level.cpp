@@ -80,18 +80,9 @@ const Aabb LEVEL[] = {
     {-40.0f, 0.0f, 30.0f, -30.0f, 10.0f, 40.0f},
     // Practice wall, west. One long clean face for learning the wallrun.
     {-55.0f, 0.0f, -10.0f, -53.0f, 7.0f, 20.0f},
-
-    // Everything below is collision-only, standing in for imported scenery.
-    // The Sponza atrium sits at (0, 0, -90); these four volumes are its outer
-    // walls so the interior is walkable and wallrunnable. Columns and railings
-    // deliberately have no collision yet.
-    {-15.4f, 0.0f, -83.8f, 14.4f, 12.0f, -81.2f},
-    {-15.4f, 0.0f, -99.5f, 14.4f, 12.0f, -96.2f},
-    {-15.4f, 0.0f, -99.5f, -13.0f, 12.0f, -81.2f},
-    {13.0f, 0.0f, -99.5f, 14.4f, 12.0f, -81.2f},
 };
 
-constexpr u64 VISIBLE_COUNT = sizeof(LEVEL) / sizeof(LEVEL[0]) - 4;
+constexpr u64 VISIBLE_COUNT = sizeof(LEVEL) / sizeof(LEVEL[0]);
 
 // The active level. Immutable between loads: the built-in arrays above until a
 // map file is loaded, then the loaded copy. This is environment data standing
@@ -122,17 +113,16 @@ core::Span<const Aabb> visible_boxes() {
 Spawn level_spawn() { return level_loaded ? loaded_spawn : Spawn{}; }
 
 Spawn team_spawn(u32 team, u32 slot) {
-    // Team zero musters on the plaza's north edge facing south toward team
-    // one, who spawn on the walkway in front of the Sponza atrium.
+    // The teams muster on opposite edges of the plaza, facing each other.
     Spawn spawn;
     const f32 spread = static_cast<f32>(slot % 5) * 3.0f - 6.0f;
     if (team == 0) {
         spawn.x = spread;
-        spawn.z = 26.0f;
+        spawn.z = 38.0f;
         spawn.yaw = 0.0f;  // yaw 0 faces -Z, toward the far team
     } else {
         spawn.x = spread;
-        spawn.z = -64.0f;
+        spawn.z = -41.0f;
         spawn.yaw = 3.14159265f;  // faces +Z, toward the plaza
     }
     return spawn;
