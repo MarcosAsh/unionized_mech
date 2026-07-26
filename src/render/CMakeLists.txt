@@ -5,11 +5,11 @@ add_shaders(SCENE_SPV SOURCES
 add_custom_target(scene_shaders DEPENDS ${SCENE_SPV})
 
 add_library(render STATIC
-    render_pipeline.cpp
-    render_scene.cpp)
+    src/render_pipeline.cpp
+    src/render_scene.cpp)
 add_dependencies(render scene_shaders)
 
-target_include_directories(render PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # render reads sim types (World) as const in its public header.
 target_link_libraries(render PUBLIC core gpu sim)

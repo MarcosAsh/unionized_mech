@@ -77,6 +77,13 @@ static void test_lerp_endpoints() {
     ASSERT((lerp(a, b, 0.0f) == a));
     ASSERT((lerp(a, b, 1.0f) == b));
     ASSERT((lerp(a, b, 0.5f) == Vec3{2.5f, 3.5f, 4.5f}));
+
+    // Angle interpolation keeps exact endpoints even across the wrap, so
+    // rendering a snapshot pair at alpha 0 or 1 reproduces it exactly.
+    ASSERT(angle_lerp(0.5f, 2.5f, 0.0f) == 0.5f);
+    ASSERT(angle_lerp(0.5f, 2.5f, 1.0f) == 2.5f);
+    ASSERT(angle_lerp(3.0f, -3.0f, 0.0f) == 3.0f);
+    ASSERT(angle_lerp(3.0f, -3.0f, 1.0f) == -3.0f);
 }
 
 static void test_quat_rotation() {

@@ -1,4 +1,4 @@
-#include "gpu/gpu_swapchain.h"
+#include "gpu_swapchain.h"
 
 #include <volk.h>
 

@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "render/render.h"
-#include "render/render_math.h"
+#include "render_math.h"
 
 #include "core/array.h"
 #include "core/log.h"

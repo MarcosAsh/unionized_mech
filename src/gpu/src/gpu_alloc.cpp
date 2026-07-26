@@ -1,4 +1,4 @@
-#include "gpu/gpu_alloc.h"
+#include "gpu/gpu.h"
 
 #include "core/assert.h"
 

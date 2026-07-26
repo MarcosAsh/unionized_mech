@@ -1,0 +1,82 @@
+#include "sim_level.h"
+
+namespace sim {
+
+bool hull_overlaps(f32 x, f32 y, f32 z, f32 height, const Aabb& b) {
+    return x - HULL_HALF_WIDTH < b.max_x && x + HULL_HALF_WIDTH > b.min_x && y < b.max_y &&
+           y + height > b.min_y && z - HULL_HALF_WIDTH < b.max_z && z + HULL_HALF_WIDTH > b.min_z;
+}
+
+bool find_wall(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes, f32* out_nx,
+               f32* out_nz) {
+    for (u64 i = 0; i < boxes.size(); ++i) {
+        const Aabb& b = boxes[i];
+        if (!(y < b.max_y && y + height > b.min_y)) {
+            continue;  // no vertical overlap with this box
+        }
+        const bool z_overlap = z - HULL_HALF_WIDTH < b.max_z && z + HULL_HALF_WIDTH > b.min_z;
+        const bool x_overlap = x - HULL_HALF_WIDTH < b.max_x && x + HULL_HALF_WIDTH > b.min_x;
+        if (z_overlap) {
+            if ((x - HULL_HALF_WIDTH) - b.max_x >= -0.01f &&
+                (x - HULL_HALF_WIDTH) - b.max_x <= WALL_DETECT_DIST) {
+                *out_nx = 1.0f;
+                *out_nz = 0.0f;
+                return true;
+            }
+            if (b.min_x - (x + HULL_HALF_WIDTH) >= -0.01f &&
+                b.min_x - (x + HULL_HALF_WIDTH) <= WALL_DETECT_DIST) {
+                *out_nx = -1.0f;
+                *out_nz = 0.0f;
+                return true;
+            }
+        }
+        if (x_overlap) {
+            if ((z - HULL_HALF_WIDTH) - b.max_z >= -0.01f &&
+                (z - HULL_HALF_WIDTH) - b.max_z <= WALL_DETECT_DIST) {
+                *out_nx = 0.0f;
+                *out_nz = 1.0f;
+                return true;
+            }
+            if (b.min_z - (z + HULL_HALF_WIDTH) >= -0.01f &&
+                b.min_z - (z + HULL_HALF_WIDTH) <= WALL_DETECT_DIST) {
+                *out_nx = 0.0f;
+                *out_nz = -1.0f;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+namespace {
+
+const Aabb LEVEL[] = {
+    // Central plaza: varied blocks for jumping, sliding, and short wallruns.
+    {-15.0f, 0.0f, -15.0f, -13.0f, 2.0f, -13.0f}, {12.0f, 0.0f, -16.0f, 16.0f, 4.0f, -12.0f},
+    {-17.0f, 0.0f, 11.0f, -11.0f, 6.0f, 17.0f},   {10.0f, 0.0f, 10.0f, 18.0f, 8.0f, 18.0f},
+    {-1.0f, 0.0f, -19.0f, 1.0f, 2.0f, -17.0f},    {-2.0f, 0.0f, 16.0f, 2.0f, 4.0f, 20.0f},
+    {-21.0f, 0.0f, -3.0f, -15.0f, 6.0f, 3.0f},    {14.0f, 0.0f, -4.0f, 22.0f, 8.0f, 4.0f},
+    {-7.0f, 0.0f, 5.0f, -5.0f, 2.0f, 7.0f},       {6.0f, 0.0f, -6.0f, 10.0f, 4.0f, -2.0f},
+    // Wallrun gauntlet, east. Parallel offset walls: run the inner face, wall
+    // jump across the gap to the next, zig-zag down the line.
+    {20.0f, 0.0f, 33.0f, 30.0f, 6.0f, 34.5f},
+    {32.0f, 0.0f, 25.5f, 42.0f, 6.0f, 27.0f},
+    {44.0f, 0.0f, 33.0f, 54.0f, 6.0f, 34.5f},
+    // Mantle stairs, south. Each step is vault height above the last.
+    {-30.0f, 0.0f, -40.0f, -26.0f, 1.0f, -36.0f},
+    {-25.0f, 0.0f, -40.0f, -21.0f, 2.0f, -36.0f},
+    {-20.0f, 0.0f, -40.0f, -16.0f, 3.0f, -36.0f},
+    {-15.0f, 0.0f, -40.0f, -11.0f, 4.0f, -36.0f},
+    // Tower, north-west. Tall faces for long wallruns that end in a mantle.
+    {-40.0f, 0.0f, 30.0f, -30.0f, 10.0f, 40.0f},
+    // Practice wall, west. One long clean face for learning the wallrun.
+    {-55.0f, 0.0f, -10.0f, -53.0f, 7.0f, 20.0f},
+};
+
+}  // namespace
+
+core::Span<const Aabb> level_boxes() {
+    return core::Span<const Aabb>(LEVEL, sizeof(LEVEL) / sizeof(LEVEL[0]));
+}
+
+}  // namespace sim

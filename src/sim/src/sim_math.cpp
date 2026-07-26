@@ -1,4 +1,4 @@
-#include "sim/sim_math.h"
+#include "sim_math.h"
 
 namespace sim {
 

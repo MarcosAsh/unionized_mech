@@ -13,27 +13,8 @@ namespace render {
 
 using core::Mat4;
 using core::Vec3;
+using core::angle_lerp;
 using core::lerp;
-
-/// Shortest-path interpolation of angles in radians, with exact endpoints.
-[[nodiscard]] inline f32 angle_lerp(f32 a, f32 b, f32 t) {
-    if (t <= 0.0f) {
-        return a;
-    }
-    if (t >= 1.0f) {
-        return b;
-    }
-    const f32 pi = 3.14159265358979f;
-    const f32 two_pi = 6.28318530717959f;
-    f32 d = b - a;
-    while (d > pi) {
-        d -= two_pi;
-    }
-    while (d < -pi) {
-        d += two_pi;
-    }
-    return a + t * d;
-}
 
 /// Right-handed Vulkan perspective. Depth maps to [0, 1] and Y is flipped so
 /// the image is upright in Vulkan's coordinate system.

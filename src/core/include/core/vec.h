@@ -124,4 +124,24 @@ struct Vec4 {
 /// Component-wise linear interpolation with exact endpoints.
 [[nodiscard]] constexpr Vec3 lerp(Vec3 a, Vec3 b, f32 t) { return (1.0f - t) * a + t * b; }
 
+/// Shortest-path interpolation of angles in radians, with exact endpoints.
+[[nodiscard]] constexpr f32 angle_lerp(f32 a, f32 b, f32 t) {
+    if (t <= 0.0f) {
+        return a;
+    }
+    if (t >= 1.0f) {
+        return b;
+    }
+    constexpr f32 PI = 3.14159265358979f;
+    constexpr f32 TWO_PI = 6.28318530717959f;
+    f32 d = b - a;
+    while (d > PI) {
+        d -= TWO_PI;
+    }
+    while (d < -PI) {
+        d += TWO_PI;
+    }
+    return a + t * d;
+}
+
 }  // namespace core

@@ -7,8 +7,8 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SDL3)
 
-add_library(platform STATIC platform.cpp)
-target_include_directories(platform PUBLIC ${CMAKE_SOURCE_DIR}/src)
+add_library(platform STATIC src/platform.cpp)
+target_include_directories(platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # core, sim, and Vulkan handle types are in the public header. SDL is an
 # implementation detail; its headers are marked SYSTEM so they never trip -Werror.

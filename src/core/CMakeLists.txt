@@ -1,10 +1,10 @@
 add_library(core STATIC
-    arena.cpp
-    assert.cpp
-    file.cpp
-    log.cpp
-    timer.cpp)
+    src/arena.cpp
+    src/assert.cpp
+    src/file.cpp
+    src/log.cpp
+    src/timer.cpp)
 
-# One public include root so modules include as "core/<header>.h".
-target_include_directories(core PUBLIC ${CMAKE_SOURCE_DIR}/src)
+# Public headers live under include/core so callers write "core/<header>.h".
+target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(core PUBLIC engine_options)
