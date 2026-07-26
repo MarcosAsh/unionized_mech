@@ -116,11 +116,14 @@ struct SkinnedModel {
                                               core::Arena& scratch, const char* base,
                                               u32 fallback_texture);
 
-/// Sample `clip` at `time`, write this frame's skinning matrices, and record
-/// the skinning dispatch. Call in the compute phase, before rendering begins.
+/// Sample a two-clip blend at `time` (blend 0 is all `clip_a`, 1 all
+/// `clip_b`), write this frame's skinning matrices, and record the skinning
+/// dispatch. Call in the compute phase, before rendering begins. Equal clip
+/// indices or an extreme blend degenerate to a single sample, so this is also
+/// the single-clip path.
 void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
-                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip, f32 time,
-                          u32 slot);
+                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip_a,
+                          u32 clip_b, f32 blend, f32 time, u32 slot);
 
 /// Queue one instance of the skinned model. Draws this frame's skinned slice.
 void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale);

@@ -4,6 +4,8 @@
 
 #include <volk.h>
 
+#include <cstring>
+
 namespace gpu {
 
 using DeviceResult = core::Result<Device, Error>;
@@ -96,6 +98,36 @@ void log_device(VkPhysicalDevice pd) {
     core::log_infof("gpu: %s | %s %s | Vulkan %u.%u.%u", props.properties.deviceName,
                     driver.driverName, driver.driverInfo, VK_API_VERSION_MAJOR(v),
                     VK_API_VERSION_MINOR(v), VK_API_VERSION_PATCH(v));
+}
+
+// True when the device offers the ray tracing extension set we use.
+bool has_ray_tracing_extensions(VkPhysicalDevice pd) {
+    u32 count = 0;
+    vkEnumerateDeviceExtensionProperties(pd, nullptr, &count, nullptr);
+    // A fixed cap keeps this off the heap; devices ship a few hundred.
+    constexpr u32 MAX_EXTENSIONS = 512;
+    if (count > MAX_EXTENSIONS) {
+        count = MAX_EXTENSIONS;
+    }
+    static VkExtensionProperties props[MAX_EXTENSIONS];
+    vkEnumerateDeviceExtensionProperties(pd, nullptr, &count, props);
+
+    const char* needed[3] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+                             VK_KHR_RAY_QUERY_EXTENSION_NAME};
+    for (const char* name : needed) {
+        bool found = false;
+        for (u32 i = 0; i < count; ++i) {
+            if (std::strcmp(props[i].extensionName, name) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
 }
 
 VkDeviceQueueCreateInfo queue_info(u32 family, const f32* priority) {
@@ -193,14 +225,34 @@ DeviceResult Device::create(const Instance& instance) {
     e2.features.multiDrawIndirect = VK_TRUE;
     e2.features.drawIndirectFirstInstance = VK_TRUE;
 
-    const char* device_extensions[1] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    // Ray tracing is optional and never required: enabled when the device has
+    // the KHR extensions (a deliberate exception to the 1.3-core-only rule),
+    // absent on hardware without them, and the raster path always exists.
+    const bool ray_tracing = has_ray_tracing_extensions(best);
+
+    const char* device_extensions[4] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+                                        VK_KHR_RAY_QUERY_EXTENSION_NAME};
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accel{};
+    accel.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accel.accelerationStructure = VK_TRUE;
+    VkPhysicalDeviceRayQueryFeaturesKHR ray_query{};
+    ray_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    ray_query.rayQuery = VK_TRUE;
+    if (ray_tracing) {
+        ray_query.pNext = e2.pNext;
+        accel.pNext = &ray_query;
+        e2.pNext = &accel;
+    }
 
     VkDeviceCreateInfo dci{};
     dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     dci.pNext = &e2;
     dci.queueCreateInfoCount = queue_count;
     dci.pQueueCreateInfos = queues;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = ray_tracing ? 4 : 1;
     dci.ppEnabledExtensionNames = device_extensions;
 
     VkDevice device = VK_NULL_HANDLE;
@@ -213,14 +265,16 @@ DeviceResult Device::create(const Instance& instance) {
     out.physical_ = best;
     out.device_ = device;
     out.graphics_family_ = best_graphics;
+    out.ray_tracing_ = ray_tracing;
     vkGetDeviceQueue(device, best_graphics, 0, &out.graphics_queue_);
     if (has_transfer) {
         out.transfer_family_ = transfer_family;
         vkGetDeviceQueue(device, transfer_family, 0, &out.transfer_queue_);
     }
 
-    core::log_infof("gpu: graphics queue family %u%s", best_graphics,
-                    has_transfer ? ", dedicated transfer queue present" : "");
+    core::log_infof("gpu: graphics queue family %u%s, ray tracing %s", best_graphics,
+                    has_transfer ? ", dedicated transfer queue present" : "",
+                    ray_tracing ? "available" : "absent");
     return DeviceResult::ok(static_cast<Device&&>(out));
 }
 

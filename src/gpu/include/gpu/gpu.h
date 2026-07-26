@@ -86,6 +86,8 @@ public:
     [[nodiscard]] u32 graphics_family() const { return graphics_family_; }
     [[nodiscard]] VkQueue graphics_queue() const { return graphics_queue_; }
     [[nodiscard]] bool has_transfer_queue() const { return transfer_queue_ != VK_NULL_HANDLE; }
+    /// True when the ray tracing extension set is enabled on this device.
+    [[nodiscard]] bool supports_ray_tracing() const { return ray_tracing_; }
     [[nodiscard]] u32 transfer_family() const { return transfer_family_; }
     [[nodiscard]] VkQueue transfer_queue() const { return transfer_queue_; }
 
@@ -98,6 +100,7 @@ private:
     VkQueue graphics_queue_ = VK_NULL_HANDLE;
     u32 transfer_family_ = 0;
     VkQueue transfer_queue_ = VK_NULL_HANDLE;
+    bool ray_tracing_ = false;
 };
 
 /// A slice of device memory handed out by the Allocator.

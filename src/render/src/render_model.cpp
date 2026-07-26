@@ -217,17 +217,30 @@ SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core
 }
 
 void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
-                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip, f32 time,
-                          u32 slot) {
+                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip_a,
+                          u32 clip_b, f32 blend, f32 time, u32 slot) {
     if (!model.base.loaded || model.clip_count == 0 || model.matrices_mapped == nullptr) {
         return;
     }
-    if (clip >= model.clip_count) {
-        clip = model.clip_count - 1;
+    if (clip_a >= model.clip_count) {
+        clip_a = model.clip_count - 1;
+    }
+    if (clip_b >= model.clip_count) {
+        clip_b = model.clip_count - 1;
     }
 
     anim::Pose pose;
-    anim::sample_clip(model.skeleton, model.clips[clip], time, &pose);
+    if (clip_a == clip_b || blend <= 0.0f) {
+        anim::sample_clip(model.skeleton, model.clips[clip_a], time, &pose);
+    } else if (blend >= 1.0f) {
+        anim::sample_clip(model.skeleton, model.clips[clip_b], time, &pose);
+    } else {
+        anim::Pose pose_a;
+        anim::Pose pose_b;
+        anim::sample_clip(model.skeleton, model.clips[clip_a], time, &pose_a);
+        anim::sample_clip(model.skeleton, model.clips[clip_b], time, &pose_b);
+        anim::blend_poses(pose_a, pose_b, blend, model.skeleton.joint_count, &pose);
+    }
     core::Mat4 world[anim::MAX_JOINTS];
     anim::pose_matrices(model.skeleton, pose, world);
     // Skinning matrices land straight in this frame's mapped slice.

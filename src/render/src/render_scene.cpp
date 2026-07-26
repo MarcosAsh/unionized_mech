@@ -321,11 +321,28 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     }
     model_queue(models_->sponza, frame.slot, SPONZA_POS, core::Quat{}, 1.0f);
 
-    // The fox runs a circle around the plaza, animation clocked off sim time so
-    // it stays smooth under interpolation. Clip 2 is Run in the Fox's clip list.
+    // The demo fox circles the plaza on a gait schedule: walk, then run, with
+    // one-second crossfades, a first blend tree over real clips. Animation is
+    // clocked off sim time so it stays smooth under interpolation. Ground speed
+    // follows the gait so the feet do not skate.
     const f32 anim_time =
         static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
-    const f32 circle_angle = anim_time * 0.35f;
+    const f32 cycle_t = std::fmod(anim_time, 20.0f);
+    f32 run_blend;
+    if (cycle_t < 9.0f) {
+        run_blend = 0.0f;
+    } else if (cycle_t < 10.0f) {
+        run_blend = cycle_t - 9.0f;
+    } else if (cycle_t < 19.0f) {
+        run_blend = 1.0f;
+    } else {
+        run_blend = 20.0f - cycle_t;
+    }
+    const f32 omega = lerp(0.083f, 0.35f, run_blend);
+    const f32 frame_dt = anim_time > last_anim_time_ ? anim_time - last_anim_time_ : 0.0f;
+    last_anim_time_ = anim_time;
+    fox_angle_ += omega * frame_dt;
+    const f32 circle_angle = fox_angle_;
     const core::Vec3 fox_pos{12.0f * std::cos(circle_angle), 0.0f,
                              12.0f * std::sin(circle_angle)};
     const core::Vec3 fox_dir{-std::sin(circle_angle), 0.0f, std::cos(circle_angle)};
@@ -370,8 +387,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot);
     model_cull(models_->blob_shadow, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                planes, frame.slot);
-    skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_, 2,
-                         anim_time, frame.slot);
+    skinned_model_update(models_->fox, frame.cmd, skin_pipeline_, skin_layout_, bindless_set_, 1,
+                         2, run_blend, anim_time, frame.slot);
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,

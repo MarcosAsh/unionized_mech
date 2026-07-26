@@ -70,6 +70,8 @@ private:
     i64 frag_mtime_ = 0;
     f32 cur_roll_ = 0.0f;    ///< Eased camera roll, cosmetic state only.
     f32 cur_fov_ = 1.2217f;  ///< Eased vertical field of view in radians.
+    f32 fox_angle_ = 0.0f;       ///< The demo fox's position on its circle.
+    f32 last_anim_time_ = 0.0f;  ///< For advancing the fox between frames.
 };
 
 }  // namespace render
