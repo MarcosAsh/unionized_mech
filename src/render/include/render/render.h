@@ -34,12 +34,17 @@ private:
     Scene() = default;
 
     static void build_pipeline(VkDevice device, VkFormat color_format, VkFormat depth_format,
-                               VkDescriptorSetLayout bindless_layout, VkPipeline* out_pipeline,
+                               VkDescriptorSetLayout bindless_layout, const char* vert_spv,
+                               const char* frag_spv, u32 push_bytes, VkPipeline* out_pipeline,
                                VkPipelineLayout* out_layout);
+    void build_pipelines();
+    void destroy_pipelines();
 
     VkDevice device_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
+    VkPipeline mesh_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout mesh_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkFormat color_format_ = VK_FORMAT_UNDEFINED;
@@ -48,6 +53,12 @@ private:
     gpu::Buffer indices_{};
     gpu::Buffer indirect_{};
     u32 index_count_ = 0;
+
+    gpu::Buffer duck_vertices_{};
+    gpu::Buffer duck_indices_{};
+    gpu::Buffer duck_indirect_{};
+    gpu::Texture duck_texture_{};
+    bool has_duck_ = false;
     i64 vert_mtime_ = 0;
     i64 frag_mtime_ = 0;
     f32 cur_roll_ = 0.0f;    ///< Eased camera roll, cosmetic state only.

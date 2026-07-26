@@ -178,6 +178,13 @@ Renderer::~Renderer() {
     for (u32 i = 0; i < owned_count_; ++i) {
         vkDestroyBuffer(dev, owned_buffers_[i], nullptr);
     }
+    for (u32 i = 0; i < owned_texture_count_; ++i) {
+        vkDestroyImageView(dev, owned_views_[i], nullptr);
+        vkDestroyImage(dev, owned_images_[i], nullptr);
+    }
+    if (default_sampler_ != VK_NULL_HANDLE) {
+        vkDestroySampler(dev, default_sampler_, nullptr);
+    }
     if (bindless_pool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev, bindless_pool_, nullptr);
     }
@@ -228,7 +235,14 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
     bindless_pool_ = other.bindless_pool_;
     bindless_layout_ = other.bindless_layout_;
     bindless_set_ = other.bindless_set_;
+    default_sampler_ = other.default_sampler_;
     next_storage_index_ = other.next_storage_index_;
+    next_sampled_index_ = other.next_sampled_index_;
+    owned_texture_count_ = other.owned_texture_count_;
+    for (u32 i = 0; i < MAX_OWNED_TEXTURES; ++i) {
+        owned_images_[i] = other.owned_images_[i];
+        owned_views_[i] = other.owned_views_[i];
+    }
     timestamp_pool_ = other.timestamp_pool_;
     timestamp_period_ = other.timestamp_period_;
     last_gpu_ms_ = other.last_gpu_ms_;

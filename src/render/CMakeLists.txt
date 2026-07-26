@@ -1,7 +1,9 @@
 # Compile the scene shaders to SPIR-V and make render depend on them.
 add_shaders(SCENE_SPV SOURCES
     ${CMAKE_SOURCE_DIR}/shaders/scene.vert
-    ${CMAKE_SOURCE_DIR}/shaders/scene.frag)
+    ${CMAKE_SOURCE_DIR}/shaders/scene.frag
+    ${CMAKE_SOURCE_DIR}/shaders/mesh.vert
+    ${CMAKE_SOURCE_DIR}/shaders/mesh.frag)
 add_custom_target(scene_shaders DEPENDS ${SCENE_SPV})
 
 add_library(render STATIC
@@ -11,9 +13,13 @@ add_dependencies(render scene_shaders)
 
 target_include_directories(render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# render reads sim types (World) as const in its public header.
+# render reads sim types (World) as const in its public header, and loads
+# imported models through asset.
 target_link_libraries(render PUBLIC core gpu sim)
-target_link_libraries(render PRIVATE volk)
+target_link_libraries(render PRIVATE asset volk)
 
-# Absolute path to the compiled SPIR-V, as a C string literal.
-target_compile_definitions(render PRIVATE "SHADER_DIR=\"${CMAKE_BINARY_DIR}/shaders\"")
+# Absolute paths to the compiled SPIR-V and converted assets, as C string
+# literals.
+target_compile_definitions(render PRIVATE
+    "SHADER_DIR=\"${CMAKE_BINARY_DIR}/shaders\""
+    "ASSET_DIR=\"${CMAKE_BINARY_DIR}/assets\"")

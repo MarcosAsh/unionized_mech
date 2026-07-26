@@ -3,8 +3,11 @@
 #include "render/render.h"
 #include "render_math.h"
 
+#include "asset/asset.h"
 #include "core/array.h"
 #include "core/log.h"
+#include "core/mat.h"
+#include "core/quat.h"
 
 #include <volk.h>
 
@@ -23,6 +26,26 @@ struct Vertex {
 struct PushConstants {
     f32 view_proj[16];
     u32 vbuf;
+};
+
+struct MeshPush {
+    f32 mvp[16];
+    f32 rot[4];  // model rotation quaternion
+    u32 vbuf;
+    u32 tex;
+};
+
+struct DuckSpot {
+    core::Vec3 pos;
+    f32 yaw;
+    f32 scale;
+};
+
+// Ducks on the plaza. Visual decoration only; they have no collision.
+constexpr DuckSpot DUCKS[3] = {
+    {{4.0f, 0.0f, 4.0f}, 0.6f, 1.5f},
+    {{-6.0f, 2.0f, 6.0f}, 2.4f, 1.0f},
+    {{2.0f, 0.0f, -9.0f}, -1.2f, 2.5f},
 };
 
 i64 file_mtime(const char* path) {
@@ -126,23 +149,55 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& scratch) {
     scene.indirect_ = gpu.create_device_buffer(&draw, sizeof(draw),
                                                VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false);
 
-    build_pipeline(scene.device_, scene.color_format_, scene.depth_format_, scene.bindless_layout_,
-                   &scene.pipeline_, &scene.layout_);
-    scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv");
-    scene.frag_mtime_ = file_mtime(SHADER_DIR "/scene.frag.spv");
+    // The imported sample model. Missing assets degrade to boxes-only, so the
+    // app still runs from a build without the sample download.
+    core::Result<asset::MeshData, const char*> duck_mesh =
+        asset::mesh_load(scratch, ASSET_DIR "/duck.umesh");
+    core::Result<asset::TextureData, const char*> duck_tex =
+        asset::texture_load(scratch, ASSET_DIR "/duck.utex");
+    if (duck_mesh.is_ok() && duck_tex.is_ok()) {
+        const asset::MeshData& mesh = duck_mesh.value();
+        const asset::TextureData& tex = duck_tex.value();
+        scene.duck_vertices_ = gpu.create_device_buffer(
+            mesh.vertices.data(), mesh.vertices.size() * sizeof(asset::MeshVertex),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        scene.duck_indices_ =
+            gpu.create_device_buffer(mesh.indices.data(), mesh.indices.size() * sizeof(u32),
+                                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
+        VkDrawIndexedIndirectCommand duck_draw{};
+        duck_draw.indexCount = static_cast<u32>(mesh.indices.size());
+        duck_draw.instanceCount = 1;
+        scene.duck_indirect_ = gpu.create_device_buffer(&duck_draw, sizeof(duck_draw),
+                                                        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, false);
+        scene.duck_texture_ = gpu.create_texture(tex.rgba.data(), tex.width, tex.height);
+        scene.has_duck_ = true;
+        core::log_infof("scene: duck loaded, %llu vertices, %ux%u texture, %u mips",
+                        static_cast<unsigned long long>(mesh.vertices.size()), tex.width,
+                        tex.height, scene.duck_texture_.mip_count);
+    } else {
+        core::log_infof("scene: no sample model (%s), boxes only",
+                        duck_mesh.is_err() ? duck_mesh.error() : duck_tex.error());
+    }
+
+    scene.build_pipelines();
+    scene.vert_mtime_ = file_mtime(SHADER_DIR "/scene.vert.spv") +
+                        file_mtime(SHADER_DIR "/mesh.vert.spv");
+    scene.frag_mtime_ = file_mtime(SHADER_DIR "/scene.frag.spv") +
+                        file_mtime(SHADER_DIR "/mesh.frag.spv");
     return scene;
 }
 
 void Scene::maybe_reload() {
-    const i64 vert = file_mtime(SHADER_DIR "/scene.vert.spv");
-    const i64 frag = file_mtime(SHADER_DIR "/scene.frag.spv");
+    const i64 vert = file_mtime(SHADER_DIR "/scene.vert.spv") +
+                     file_mtime(SHADER_DIR "/mesh.vert.spv");
+    const i64 frag = file_mtime(SHADER_DIR "/scene.frag.spv") +
+                     file_mtime(SHADER_DIR "/mesh.frag.spv");
     if (vert == vert_mtime_ && frag == frag_mtime_) {
         return;
     }
     vkDeviceWaitIdle(device_);  // reload is an event, not the steady frame path
-    vkDestroyPipeline(device_, pipeline_, nullptr);
-    vkDestroyPipelineLayout(device_, layout_, nullptr);
-    build_pipeline(device_, color_format_, depth_format_, bindless_layout_, &pipeline_, &layout_);
+    destroy_pipelines();
+    build_pipelines();
     vert_mtime_ = vert;
     frag_mtime_ = frag;
     core::log_info("shaders reloaded");
@@ -241,11 +296,45 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         pc.view_proj[i] = view_proj.m[i];
     }
     pc.vbuf = vertices_.bindless_index;
-    vkCmdPushConstants(frame.cmd, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants),
-                       &pc);
+    vkCmdPushConstants(frame.cmd, layout_,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(PushConstants), &pc);
 
     vkCmdDrawIndexedIndirect(frame.cmd, indirect_.handle, 0, 1,
                              sizeof(VkDrawIndexedIndirectCommand));
+
+    // The textured mesh pass: the imported sample model at a few plaza spots.
+    if (has_duck_) {
+        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_);
+        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_layout_, 0, 1,
+                                &bindless_set_, 0, nullptr);
+        vkCmdBindIndexBuffer(frame.cmd, duck_indices_.handle, 0, VK_INDEX_TYPE_UINT32);
+        for (const DuckSpot& spot : DUCKS) {
+            const f32 half = spot.yaw * 0.5f;
+            const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
+                                                              std::sin(half), std::cos(half));
+            core::Mat4 model = core::Mat4::trs(spot.pos, rot);
+            model = model * core::Mat4::scale(
+                                core::Vec3{spot.scale, spot.scale, spot.scale});
+            const core::Mat4 mvp = view_proj * model;
+
+            MeshPush mp{};
+            for (u32 i = 0; i < 16; ++i) {
+                mp.mvp[i] = mvp.m[i];
+            }
+            mp.rot[0] = rot.x;
+            mp.rot[1] = rot.y;
+            mp.rot[2] = rot.z;
+            mp.rot[3] = rot.w;
+            mp.vbuf = duck_vertices_.bindless_index;
+            mp.tex = duck_texture_.bindless_index;
+            vkCmdPushConstants(frame.cmd, mesh_layout_,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(MeshPush), &mp);
+            vkCmdDrawIndexedIndirect(frame.cmd, duck_indirect_.handle, 0, 1,
+                                     sizeof(VkDrawIndexedIndirectCommand));
+        }
+    }
 
     vkCmdEndRendering(frame.cmd);
 }
@@ -254,13 +343,8 @@ Scene::~Scene() {
     if (device_ == VK_NULL_HANDLE) {
         return;
     }
-    vkDeviceWaitIdle(device_);  // shutdown: the pipeline may still be in flight
-    if (pipeline_ != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device_, pipeline_, nullptr);
-    }
-    if (layout_ != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device_, layout_, nullptr);
-    }
+    vkDeviceWaitIdle(device_);  // shutdown: the pipelines may still be in flight
+    destroy_pipelines();
 }
 
 Scene::Scene(Scene&& other) noexcept { *this = static_cast<Scene&&>(other); }
@@ -270,14 +354,30 @@ Scene& Scene::operator=(Scene&& other) noexcept {
         device_ = other.device_;
         pipeline_ = other.pipeline_;
         layout_ = other.layout_;
+        mesh_pipeline_ = other.mesh_pipeline_;
+        mesh_layout_ = other.mesh_layout_;
         bindless_set_ = other.bindless_set_;
+        bindless_layout_ = other.bindless_layout_;
+        color_format_ = other.color_format_;
+        depth_format_ = other.depth_format_;
         vertices_ = other.vertices_;
         indices_ = other.indices_;
         indirect_ = other.indirect_;
         index_count_ = other.index_count_;
+        duck_vertices_ = other.duck_vertices_;
+        duck_indices_ = other.duck_indices_;
+        duck_indirect_ = other.duck_indirect_;
+        duck_texture_ = other.duck_texture_;
+        has_duck_ = other.has_duck_;
+        vert_mtime_ = other.vert_mtime_;
+        frag_mtime_ = other.frag_mtime_;
+        cur_roll_ = other.cur_roll_;
+        cur_fov_ = other.cur_fov_;
         other.device_ = VK_NULL_HANDLE;
         other.pipeline_ = VK_NULL_HANDLE;
         other.layout_ = VK_NULL_HANDLE;
+        other.mesh_pipeline_ = VK_NULL_HANDLE;
+        other.mesh_layout_ = VK_NULL_HANDLE;
     }
     return *this;
 }
