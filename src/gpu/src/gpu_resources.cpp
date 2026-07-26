@@ -58,11 +58,27 @@ void Renderer::init_bindless() {
     ASSERT_MSG(vkCreateSampler(dev, &sampler_ci, nullptr, &default_sampler_) == VK_SUCCESS,
                "vkCreateSampler");
 
+    // The shadow comparison sampler: hardware PCF per tap, clamped to border
+    // white so samples outside the sun volume read as lit.
+    VkSamplerCreateInfo shadow_ci{};
+    shadow_ci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    shadow_ci.magFilter = VK_FILTER_LINEAR;
+    shadow_ci.minFilter = VK_FILTER_LINEAR;
+    shadow_ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    shadow_ci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadow_ci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadow_ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadow_ci.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    shadow_ci.compareEnable = VK_TRUE;
+    shadow_ci.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    ASSERT_MSG(vkCreateSampler(dev, &shadow_ci, nullptr, &shadow_sampler_) == VK_SUCCESS,
+               "shadow sampler");
+
     const VkDescriptorPoolSize sizes[4] = {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, BINDLESS_STORAGE_COUNT},
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BINDLESS_SAMPLED_COUNT},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, BINDLESS_STORAGE_IMAGE_COUNT},
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 2},
     };
     VkDescriptorPoolCreateInfo pool_ci{};
     pool_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -81,8 +97,8 @@ void Renderer::init_bindless() {
     const u32 counts[3] = {BINDLESS_STORAGE_COUNT, BINDLESS_SAMPLED_COUNT,
                            BINDLESS_STORAGE_IMAGE_COUNT};
 
-    VkDescriptorSetLayoutBinding bindings[4]{};
-    VkDescriptorBindingFlags flags[4];
+    VkDescriptorSetLayoutBinding bindings[5]{};
+    VkDescriptorBindingFlags flags[5];
     for (u32 i = 0; i < 3; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = types[i];
@@ -97,17 +113,23 @@ void Renderer::init_bindless() {
     bindings[3].stageFlags = VK_SHADER_STAGE_ALL;
     bindings[3].pImmutableSamplers = &default_sampler_;
     flags[3] = 0;
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_ALL;
+    bindings[4].pImmutableSamplers = &shadow_sampler_;
+    flags[4] = 0;
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flag_ci{};
     flag_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flag_ci.bindingCount = 4;
+    flag_ci.bindingCount = 5;
     flag_ci.pBindingFlags = flags;
 
     VkDescriptorSetLayoutCreateInfo layout_ci{};
     layout_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layout_ci.pNext = &flag_ci;
     layout_ci.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layout_ci.bindingCount = 4;
+    layout_ci.bindingCount = 5;
     layout_ci.pBindings = bindings;
     ASSERT_MSG(vkCreateDescriptorSetLayout(dev, &layout_ci, nullptr, &bindless_layout_) ==
                    VK_SUCCESS,

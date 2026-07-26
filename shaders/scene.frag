@@ -3,6 +3,7 @@
 
 layout(set = 0, binding = 1) uniform texture2D textures[];
 layout(set = 0, binding = 3) uniform sampler default_sampler;
+layout(set = 0, binding = 4) uniform samplerShadow shadow_sampler;
 
 struct Globals {
     mat4 sun_view_proj;
@@ -30,19 +31,19 @@ float sun_shadow(Globals g, vec3 world) {
     vec4 clip = g.sun_view_proj * vec4(world, 1.0);
     vec3 ndc = clip.xyz / clip.w;
     vec2 uv = ndc.xy * 0.5 + 0.5;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z > 1.0) {
-        return 1.0;
+    if (ndc.z > 1.0) {
+        return 1.0;  // beyond the sun volume's far plane
     }
-    const float bias = 0.0015;
-    const float texel = 1.0 / 2048.0;
+    // 3x3 of hardware-filtered comparison taps. The border-white sampler makes
+    // anything outside the camera-following sun volume read as lit.
+    const float bias = 0.0008;
+    const float texel = 1.0 / 4096.0;
     float lit = 0.0;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
-            float depth = texture(sampler2D(textures[nonuniformEXT(g.shadow_tex)],
-                                            default_sampler),
-                                  uv + vec2(x, y) * texel)
-                              .r;
-            lit += ndc.z - bias <= depth ? 1.0 : 0.0;
+            lit += texture(sampler2DShadow(textures[nonuniformEXT(g.shadow_tex)],
+                                           shadow_sampler),
+                           vec3(uv + vec2(x, y) * texel, ndc.z - bias));
         }
     }
     return lit / 9.0;

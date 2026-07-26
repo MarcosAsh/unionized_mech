@@ -251,12 +251,20 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_queue(models_->viewmodel, frame.slot, core::Vec3{0.17f, -0.14f, -0.33f}, core::Quat{},
                 1.0f);
 
-    // The sun: a fixed direction over the map, orthographic shadow volume
-    // covering the whole play area. The per-frame globals carry it to shaders.
+    // The sun volume follows the camera: a tight orthographic box gives dense
+    // shadow texels where the player is looking, and the border-white sampler
+    // leaves everything beyond it lit. Snapping the sun view to whole texels
+    // stops shadow edges shimmering as the camera moves.
     const Vec3 sun_dir = Vec3{0.4f, 1.0f, 0.25f}.normalized();
-    const Vec3 sun_center{0.0f, 0.0f, -20.0f};
-    const Mat4 sun_view = look_along(sun_center + sun_dir * 120.0f, sun_dir * -1.0f);
-    const Mat4 sun_proj = orthographic(-130.0f, 130.0f, -130.0f, 130.0f, 1.0f, 300.0f);
+    constexpr f32 SUN_EXTENT = 55.0f;
+    const Vec3 sun_center{cam_x, 0.0f, cam_z};
+    Mat4 sun_view = look_along(sun_center + sun_dir * 100.0f, sun_dir * -1.0f);
+    const f32 texel_world =
+        (2.0f * SUN_EXTENT) / static_cast<f32>(gpu::Renderer::shadow_size());
+    sun_view.m[12] = std::floor(sun_view.m[12] / texel_world) * texel_world;
+    sun_view.m[13] = std::floor(sun_view.m[13] / texel_world) * texel_world;
+    const Mat4 sun_proj =
+        orthographic(-SUN_EXTENT, SUN_EXTENT, -SUN_EXTENT, SUN_EXTENT, 1.0f, 260.0f);
     const Mat4 sun_view_proj = sun_proj * sun_view;
 
     SceneGlobals& globals = models_->globals_mapped[frame.slot];

@@ -226,7 +226,7 @@ public:
     [[nodiscard]] VkImageView shadow_view() const { return shadow_view_; }
     [[nodiscard]] u32 shadow_bindless() const { return shadow_bindless_; }
     /// Shadow map resolution in texels per side.
-    static constexpr u32 shadow_size() { return 2048; }
+    static constexpr u32 shadow_size() { return 4096; }
     /// Number of frames in flight, for sizing per-frame ranges.
     [[nodiscard]] static constexpr u32 frames_in_flight() { return FRAMES_IN_FLIGHT; }
 
@@ -300,6 +300,7 @@ private:
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
     VkSampler default_sampler_ = VK_NULL_HANDLE;
+    VkSampler shadow_sampler_ = VK_NULL_HANDLE;
     u32 next_storage_index_ = 0;
     u32 next_sampled_index_ = 0;
 
