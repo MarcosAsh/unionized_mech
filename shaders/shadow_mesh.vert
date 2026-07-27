@@ -1,28 +1,11 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_GOOGLE_include_directive : require
 
 // Depth-only pass of record-driven models from the sun's view. Reads the same
 // draw records as the main mesh pass, so skinned characters cast too.
 
-struct Vertex {
-    float px, py, pz;
-    float nx, ny, nz;
-    float u, v;
-};
-
-struct DrawRecord {
-    mat4 model;
-    vec4 rot;
-    vec4 color;
-    vec4 bounds_min;
-    vec4 bounds_max;
-    uint vbuf;
-    uint tex;
-    uint index_count;
-    uint first_index;
-    uint vertex_base;
-    uint pad0, pad1, pad2;
-};
+#include "common.glsl"
 
 layout(std430, set = 0, binding = 0) readonly buffer Verts {
     Vertex v[];

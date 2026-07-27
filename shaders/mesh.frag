@@ -25,6 +25,8 @@ layout(location = 1) in vec2 frag_uv;
 layout(location = 2) flat in vec4 frag_color;
 layout(location = 3) flat in uint frag_tex;
 layout(location = 4) in vec3 frag_world;
+layout(location = 5) flat in float frag_metallic;
+layout(location = 6) flat in float frag_roughness;
 layout(location = 0) out vec4 out_color;
 
 float sun_shadow(Globals g, vec3 world) {
@@ -57,7 +59,8 @@ void main() {
     }
     Globals g = globals[pc.globals].g[pc.gslot];
     vec3 albedo = sampled.rgb * frag_color.rgb;
-    out_color = vec4(shade(g, albedo, normalize(frag_normal), frag_world,
+    out_color = vec4(shade(g, albedo, frag_metallic, frag_roughness, normalize(frag_normal),
+                           frag_world,
                            sun_shadow(g, frag_world)),
                      1.0);
 }

@@ -30,11 +30,17 @@ struct Submesh {
     f32 color[4] = {1.0f, 1.0f, 1.0f, 1.0f};  ///< Base color factor.
     f32 bounds_min[3] = {0.0f, 0.0f, 0.0f};
     f32 bounds_max[3] = {0.0f, 0.0f, 0.0f};
+    /// Metallic and roughness, as the shading model reads them. The defaults
+    /// are a matte dielectric rather than glTF's own metallic 1: a material
+    /// that never said is far likelier to be painted than to be bare metal, and
+    /// the procedural props set no material at all.
+    f32 metallic = 0.0f;
+    f32 roughness = 0.6f;
 };
 
 constexpr u32 NO_TEXTURE = 0xFFFFFFFFu;
 
-static_assert(sizeof(Submesh) == 52, "Submesh layout must stay file-stable");
+static_assert(sizeof(Submesh) == 60, "Submesh layout must stay file-stable");
 
 /// Triangle mesh data in engine layout: one vertex and index pool, drawn as
 /// per-material submesh ranges.

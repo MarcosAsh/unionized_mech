@@ -458,6 +458,8 @@ core::Result<Model, const char*> import_gltf(core::Arena& arena, const char* pat
             for (u32 c = 0; c < 4; ++c) {
                 sub.color[c] = mat->pbr_metallic_roughness.base_color_factor[c];
             }
+            sub.metallic = mat->pbr_metallic_roughness.metallic_factor;
+            sub.roughness = mat->pbr_metallic_roughness.roughness_factor;
         }
 
         // Model-space bounds over the submesh's referenced vertices, for culling.

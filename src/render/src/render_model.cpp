@@ -160,9 +160,9 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
         rec.index_count = sub.index_count;
         rec.first_index = sub.index_offset;
         rec.vertex_base = vertex_base;
-        rec.pad[0] = 0;
-        rec.pad[1] = 0;
-        rec.pad[2] = 0;
+        rec.metallic = sub.metallic;
+        rec.roughness = sub.roughness;
+        rec.pad = 0;
         ++model.queued;
     }
 }
@@ -208,9 +208,9 @@ void model_queue_glyph(RenderModel& model, u32 slot, core::Vec3 pos, core::Vec3 
     rec.index_count = sub.index_count;
     rec.first_index = sub.index_offset;
     rec.vertex_base = 0;
-    rec.pad[0] = 0;
-    rec.pad[1] = 0;
-    rec.pad[2] = 0;
+    rec.metallic = sub.metallic;
+    rec.roughness = sub.roughness;
+    rec.pad = 0;
     ++model.queued;
 }
 

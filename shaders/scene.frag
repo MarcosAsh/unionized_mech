@@ -59,7 +59,8 @@ void main() {
     vec2 uv = frag_uv * vec2(1.0, dims.x / dims.y);
     vec3 detail =
         texture(sampler2D(textures[nonuniformEXT(g.level_tex)], default_sampler), uv).rgb;
-    out_color = vec4(shade(g, frag_color * detail, normalize(frag_normal), frag_world,
+    out_color = vec4(shade(g, frag_color * detail, LEVEL_METALLIC, LEVEL_ROUGHNESS,
+                           normalize(frag_normal), frag_world,
                            sun_shadow(g, frag_world)),
                      1.0);
 }

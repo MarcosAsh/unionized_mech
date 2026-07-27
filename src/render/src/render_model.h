@@ -36,7 +36,9 @@ struct DrawRecord {
     u32 index_count;
     u32 first_index;
     u32 vertex_base;  ///< vertexOffset, selecting a per-frame skinned slice.
-    u32 pad[3];
+    f32 metallic;
+    f32 roughness;
+    u32 pad;
 };
 
 static_assert(sizeof(DrawRecord) == 160, "DrawRecord must match the shader layout");

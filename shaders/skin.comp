@@ -1,17 +1,14 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_GOOGLE_include_directive : require
 
 // Compute skinning. One thread per vertex: blend the vertex by its four joint
 // matrices and write the result into this frame's slice of the skinned vertex
 // buffer, which the mesh pass then draws like any static mesh.
 
-layout(local_size_x = 64) in;
+#include "common.glsl"
 
-struct Vertex {
-    float px, py, pz;
-    float nx, ny, nz;
-    float u, v;
-};
+layout(local_size_x = 64) in;
 
 // asset::SkinVertex: four u16 joints packed into two uints, four weights.
 struct SkinVertex {

@@ -1,26 +1,15 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_GOOGLE_include_directive : require
 
 // Frustum culling. One thread per draw record: test the record's world-space
 // box against the view frustum, and append an indirect draw command for each
 // survivor. The record index rides in firstInstance so the vertex shader can
 // find its data.
 
-layout(local_size_x = 64) in;
+#include "common.glsl"
 
-struct DrawRecord {
-    mat4 model;
-    vec4 rot;
-    vec4 color;
-    vec4 bounds_min;  // model-space box, w unused
-    vec4 bounds_max;
-    uint vbuf;
-    uint tex;
-    uint index_count;
-    uint first_index;
-    uint vertex_base;  // vertexOffset for per-frame skinned vertex slices
-    uint pad0, pad1, pad2;
-};
+layout(local_size_x = 64) in;
 
 struct DrawCommand {
     uint index_count;
