@@ -185,7 +185,11 @@ Scene& Scene::operator=(Scene&& other) noexcept {
         vert_mtime_ = other.vert_mtime_;
         frag_mtime_ = other.frag_mtime_;
         cur_roll_ = other.cur_roll_;
+        cur_vm_lean_ = other.cur_vm_lean_;
         cur_fov_ = other.cur_fov_;
+        for (u32 i = 0; i < sim::MAX_PLAYERS; ++i) {
+            trooper_bank_[i] = other.trooper_bank_[i];
+        }
         other.device_ = VK_NULL_HANDLE;
         other.pipeline_ = VK_NULL_HANDLE;
         other.layout_ = VK_NULL_HANDLE;

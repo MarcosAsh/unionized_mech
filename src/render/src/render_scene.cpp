@@ -24,6 +24,31 @@ constexpr f32 BASE_FOV = 1.2217f;
 /// How far the field of view opens at top speed, as a fraction of BASE_FOV.
 constexpr f32 FOV_SPEED_SCALE = 0.1f;
 
+/// How far a wallrunning body banks into the wall, in radians. The rig has no
+/// wallrun clip, so the run cycle keeps doing the legs and the lean carries the
+/// read. Larger than the camera's own tilt because a body seen from outside has
+/// to sell the pose on its silhouette alone.
+constexpr f32 WALLRUN_BANK = 0.40f;
+
+/// How far the viewmodel swings while wallrunning, in metres across and down.
+/// The gun is bolted to the view, so a wallrun would otherwise be the one big
+/// movement the player's own hands sit out.
+constexpr f32 WALLRUN_VM_SHIFT = 0.05f;
+
+/// How fast the wall leans ease in and out. Shared so the camera, the bodies
+/// and the viewmodel all arrive together.
+constexpr f32 LEAN_EASE = 0.2f;
+
+/// Which side of a character a nearby wall is on: positive to their left,
+/// negative to their right, tapering to zero as they turn to face it head on.
+/// Every wall lean comes through here, so the camera, the bodies, and the
+/// viewmodel cannot disagree about which way to tilt.
+f32 wall_side(f32 yaw, f32 wall_nx, f32 wall_nz) {
+    const f32 facing_x = std::sin(yaw);
+    const f32 facing_z = -std::cos(yaw);
+    return facing_x * wall_nz - facing_z * wall_nx;
+}
+
 struct PushConstants {
     f32 view_proj[16];
     u32 vbuf;
@@ -90,14 +115,17 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // rather than a snap. A nearby wall while airborne gets a partial lean as
     // anticipation before the run starts. Cosmetic and render-side only.
     f32 target_roll = 0.0f;
+    f32 target_vm_lean = 0.0f;
     const bool near_wall = curr.player().wall_nx != 0.0f || curr.player().wall_nz != 0.0f;
+    const bool wallrunning = curr.player().state == sim::MoveState::Wallrun;
     if (near_wall) {
-        const f32 facing_x = std::sin(yaw);
-        const f32 facing_z = -std::cos(yaw);
-        const f32 side = facing_x * curr.player().wall_nz - facing_z * curr.player().wall_nx;
-        target_roll = side * (curr.player().state == sim::MoveState::Wallrun ? 0.15f : 0.07f);
+        const f32 side = wall_side(yaw, curr.player().wall_nx, curr.player().wall_nz);
+        target_roll = side * (wallrunning ? 0.15f : 0.07f);
+        // The hands only join in on the run itself, not on the approach.
+        target_vm_lean = wallrunning ? side : 0.0f;
     }
-    cur_roll_ += (target_roll - cur_roll_) * 0.2f;
+    cur_roll_ += (target_roll - cur_roll_) * LEAN_EASE;
+    cur_vm_lean_ += (target_vm_lean - cur_vm_lean_) * LEAN_EASE;
 
     // Speed-linked field of view, the strongest "I am fast" signal. Widens as
     // horizontal speed climbs from run speed to the slide ceiling, eased to
@@ -193,8 +221,21 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                                anim_time + static_cast<f32>(i) * 0.37f, true};
         }
         const f32 half = (other.yaw + TROOPER_RIG.yaw_offset) * 0.5f;
-        const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
-                                                          std::sin(half), std::cos(half));
+        const core::Quat yaw_rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
+                                                              std::sin(half), std::cos(half));
+
+        // Wallrunners bank into the wall, head first, and ease back out of it
+        // when they leave. Banking about the world facing axis rather than the
+        // model's own means the lean survives the yaw offset the rig needs.
+        const f32 target_bank =
+            other.state == sim::MoveState::Wallrun
+                ? -wall_side(other.yaw, other.wall_nx, other.wall_nz) * WALLRUN_BANK
+                : 0.0f;
+        trooper_bank_[i] += (target_bank - trooper_bank_[i]) * LEAN_EASE;
+        const core::Vec3 facing{std::sin(other.yaw), 0.0f, -std::cos(other.yaw)};
+        const f32 bank_half = trooper_bank_[i] * 0.5f;
+        const core::Quat rot =
+            core::Quat::from_axis_half(facing, std::sin(bank_half), std::cos(bank_half)) * yaw_rot;
         if (rigged) {
             skinned_model_queue(models_->trooper, frame.slot, i,
                                 core::Vec3{other.x, other.y, other.z}, rot, TROOPER_RIG.scale,
@@ -241,8 +282,17 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const f32 kick =
         curr.player().shot_age < 4 ? (4.0f - static_cast<f32>(curr.player().shot_age)) * 0.012f
                                    : 0.0f;
-    model_queue(models_->gun, frame.slot, core::Vec3{0.17f, -0.14f, -0.45f + kick}, core::Quat{},
-                0.6f);
+    // Wallrunning swings the weapon toward the wall and drops it, the pilot's
+    // half of the lean the camera is already doing.
+    const f32 vm_half = cur_vm_lean_ * WALLRUN_BANK * 0.5f;
+    const core::Quat vm_rot = core::Quat::from_axis_half(core::Vec3{0.0f, 0.0f, 1.0f},
+                                                         std::sin(vm_half), std::cos(vm_half));
+    model_queue(models_->gun, frame.slot,
+                core::Vec3{0.17f + cur_vm_lean_ * WALLRUN_VM_SHIFT,
+                           -0.14f - (cur_vm_lean_ < 0.0f ? -cur_vm_lean_ : cur_vm_lean_) *
+                                        WALLRUN_VM_SHIFT,
+                           -0.45f + kick},
+                vm_rot, 0.6f);
     model_queue(models_->viewmodel, frame.slot, core::Vec3{}, core::Quat{}, 1.0f);
     if (curr.player().shot_hit != 0 && curr.player().shot_age < 8) {
         model_queue(models_->hitmarker, frame.slot, core::Vec3{0.0f, 0.0f, -1.2f}, core::Quat{},

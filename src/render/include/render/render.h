@@ -88,8 +88,12 @@ private:
     gpu::Renderer* gpu_ = nullptr;  ///< Borrowed; outlives the scene.
     i64 vert_mtime_ = 0;
     i64 frag_mtime_ = 0;
-    f32 cur_roll_ = 0.0f;    ///< Eased camera roll, cosmetic state only.
-    f32 cur_fov_ = 1.2217f;  ///< Eased vertical field of view in radians.
+    f32 cur_roll_ = 0.0f;     ///< Eased camera roll, cosmetic state only.
+    f32 cur_vm_lean_ = 0.0f;  ///< Eased viewmodel wall lean, -1 to 1.
+    f32 cur_fov_ = 1.2217f;   ///< Eased vertical field of view in radians.
+    /// Eased wallrun bank per character, in radians. Presentation state the sim
+    /// does not carry, so it lives for exactly as long as the scene does.
+    f32 trooper_bank_[sim::MAX_PLAYERS] = {};
 };
 
 }  // namespace render
