@@ -1,0 +1,231 @@
+# unionized_mech map: Skyline. Edit while the game runs and it reloads live.
+# spawn x y z yaw | box x0 y0 z0 x1 y1 z1 (visible) | cbox ... (collision only)
+#
+# Sized against researched Titanfall 2 numbers, converted to metres. None of it
+# is official: Respawn has never published map dimensions, so the footprints are
+# community estimates and the rest is measured community work or stated design
+# philosophy. What the research actually pinned down:
+#
+#   storey height      5 m       (a round 200 engine units, measured in Apex)
+#   single doorway     1.6 m     double 3.0 m
+#   wallrun face       ~20 m     from a 1.75 s wallrun at wallrun speed
+#   parallel walls     6-8 m     inside what one wall jump crosses
+#   mech lane          12-25 m   wide enough for two mechs to pass and dodge
+#   engagement         20-40 m   typical, and what cover should be sized around
+#   footprint          150-250 m per side for a standard 6v6 map
+#
+# 160 m square for ten players, at the tight end of that range. Three lanes
+# north to south, in the three-lane skeleton the community reads in these maps:
+#
+#   west   x -58..-47   wallrun canyon, two staggered walls 7 m apart
+#   centre x -12..12    mech avenue, open, broken by pillars and two bridges
+#   east   x  30..70    city block, buildings at one, two and three storeys
+#
+# The rules the geometry follows, from Respawn's own statements:
+#   - A wallrunnable face has to read as one: big, smooth, unbroken. Every wall
+#     meant to be run is at least 20 m long with nothing stuck to it.
+#   - Mech pathing is the floor on map size. The avenue and both cross streets
+#     stay 20 m or wider and every bridge clears 6 m, above the 4.6 m chassis.
+#   - Treat the floor like lava. Ground cover is deliberately sparse and low;
+#     the height is on the walls and the roofs, and that is where the routes are.
+
+spawn 0 0 70 0
+
+# ---------------------------------------------------------------------------
+# West lane: the wallrun canyon.
+#
+# Inner faces 7 m apart, segments 20 m long, staggered 10 m so no single wall
+# carries you the length of it. Run one, jump the gap, land the next. 8 m tall,
+# which puts their tops on the mid layer rather than the roofs.
+box -58 0 -70 -56 8 -50
+box -58 0 -30 -56 8 -10
+box -58 0 10 -56 8 30
+box -58 0 50 -56 8 70
+box -49 0 -60 -47 8 -40
+box -49 0 -20 -47 8 0
+box -49 0 20 -47 8 40
+box -49 0 60 -47 8 76
+
+# Canyon mouth, south: a low block to mantle onto so the run can be entered at
+# speed from the spawn side rather than from a standing start.
+box -54 0 74 -50 2 78
+
+# ---------------------------------------------------------------------------
+# West field: the training ground, between the canyon and the avenue.
+
+# Wall kick shaft. Faces 4 m apart, inside the 4.1 m a wall jump carries. Each
+# kick tops out 1.14 m above the last, so the perch is a climb.
+box -40 0 -34 -32 6 -32.5
+box -40 0 -28.5 -32 6 -27
+box -40 6 -34 -32 7 -27
+
+# Mantle stairs: each step one vault higher than the last.
+box -42 0 14 -38 1 18
+box -37 0 14 -33 2 18
+box -32 0 14 -28 3 18
+box -27 0 14 -23 4 18
+
+# Slide gate. 1.1 m of clearance: taller than the 1.0 m crouched hull, shorter
+# than the 1.8 m standing one. The only way through is fast and crouched, which
+# gives sliding a job on flat ground that speed alone cannot do.
+box -44 1.1 44 -24 3.2 46
+
+# Mid-layer platforms, reachable off the canyon tops, dropping into the avenue.
+box -30 4 -8 -22 5 4
+box -22 4 -4 -16 5 4
+
+# ---------------------------------------------------------------------------
+# Centre lane: the mech avenue.
+#
+# 24 m of clear width down the middle so two chassis can pass and still dodge.
+# The length would be a 160 m sightline if it were left alone, so it is broken
+# by pillars set alternately either side of the centre line: cover you take at a
+# diagonal, which keeps engagements at the 20-40 m the weapons are tuned for.
+box -8 0 -58 -4 9 -54
+box 4 0 -38 8 9 -34
+box -8 0 -18 -4 9 -14
+box 4 0 14 8 9 18
+box -8 0 34 -4 9 38
+box 4 0 54 8 9 58
+
+# Central landmark: a courtyard at the crossroads, walled by four one-storey
+# corner blocks. Their tops see down all three lanes, which is what makes the
+# middle worth contesting, and the steps on the south-west corner are the way
+# up. The middle itself stays open because the mech is parked on it.
+box 9 0 -18 17 5 -10
+box -17 0 -18 -9 5 -10
+box 9 0 10 17 5 18
+box -17 0 10 -9 5 18
+box -13 0 6 -9 1.6 10
+box -13 1.6 2 -9 3.2 6
+
+# Bridges over the avenue, north and south. Decks at 6 m, which clears the
+# 4.6 m chassis underneath, and they join the west mid layer to the east roofs
+# so the upper route runs the full width of the map instead of dead-ending.
+box -20 6 -32 20 7 -28
+box -20 6 28 20 7 32
+box -20 0 -32 -16 6 -28
+box 16 0 -32 20 6 -28
+box -20 0 28 -16 6 32
+box 16 0 28 20 6 32
+
+# ---------------------------------------------------------------------------
+# East lane: the city block.
+#
+# Two columns of buildings with an 8 m alley between them, wallrunnable on both
+# sides down its whole length. Heights step through one, two and three storeys
+# so the roofs are a route with its own climbs rather than one flat plane.
+box 30 0 -76 46 10 -52
+box 54 0 -76 70 5 -52
+box 30 0 -44 46 5 -20
+box 54 0 -44 70 10 -20
+box 30 0 -12 46 15 12
+box 54 0 -12 70 10 12
+box 30 0 20 46 5 44
+box 54 0 20 70 15 44
+box 30 0 52 46 10 76
+box 54 0 52 70 5 76
+
+# Step run into the block. 0.4 m risers, under the 0.457 m step height, so this
+# is walked up at full speed rather than vaulted. Kerbs should never cost you
+# momentum.
+box 20 0 -8 26 0.4 -4
+box 20 0 -4 26 0.8 0
+box 20 0 0 26 1.2 4
+box 20 0 4 26 1.6 8
+
+# Slide gate, east approach.
+box 24 1.1 -46 44 3.2 -44
+
+# ---------------------------------------------------------------------------
+# Cross streets, east-west, at the thirds. 20 m clear so a chassis can turn
+# through them, and they are what stops the three lanes being three corridors.
+box -16 0 -50 -12 6 -46
+box 12 0 -50 16 6 -46
+box -16 0 46 -12 6 50
+box 12 0 46 16 6 50
+
+# ---------------------------------------------------------------------------
+# Outer margins: sparse cover, so the edges are crossable but never safe.
+box -76 0 -20 -70 3 -14
+box -76 0 30 -70 3 36
+box 74 0 -30 80 3 -24
+box 74 0 40 80 3 46
+box -20 0 -74 -14 3 -68
+box 14 0 -74 20 3 -68
+
+# ---------------------------------------------------------------------------
+# Perimeter: nobody leaves the arena, and the walls are tall enough to run on.
+cbox -82 0 -82 82 25 -80
+cbox -82 0 80 82 25 82
+cbox -82 0 -82 -80 25 82
+cbox 80 0 -82 82 25 82
+
+# ---------------------------------------------------------------------------
+# Bot waypoints. Auto-linked on load to neighbours within 20 m with a clear
+# line at chest height. Grown outward from the spawn so every one is reachable
+# from both team spawns, which sim_tests asserts: an island of waypoints is a
+# bot that stands still forever. Spread to cover all three lanes, the alley
+# included, rather than placed on landmarks.
+node -18 0 78
+node -60 0 72
+node 0 0 72
+node 48 0 72
+node -78 0 66
+node -42 0 66
+node 18 0 66
+node -24 0 60
+node -6 0 54
+node 48 0 54
+node -72 0 48
+node 24 0 48
+node -42 0 42
+node -12 0 36
+node 48 0 36
+node -66 0 30
+node 6 0 30
+node 78 0 30
+node -36 0 24
+node 24 0 24
+node -18 0 18
+node 54 0 18
+node -60 0 12
+node 72 0 12
+node -78 0 6
+node 18 0 6
+node -24 0 0
+node 0 0 0
+node 48 0 0
+node -54 0 -6
+node 78 0 -6
+node -72 0 -12
+node -30 0 -18
+node 6 0 -18
+node -48 0 -24
+node 24 0 -24
+node 48 0 -24
+node 72 0 -24
+node -66 0 -30
+node -24 0 -36
+node 0 0 -36
+node -42 0 -42
+node 24 0 -42
+node 48 0 -42
+node 72 0 -42
+node -60 0 -48
+node -78 0 -54
+node -30 0 -54
+node -12 0 -54
+node 6 0 -54
+node 24 0 -60
+node 48 0 -60
+node 78 0 -60
+node -72 0 -72
+node -36 0 -72
+node 0 0 -72
+node -54 0 -78
+node -18 0 -78
+node 18 0 -78
+node 36 0 -78
+node 54 0 -78
+node 72 0 -78

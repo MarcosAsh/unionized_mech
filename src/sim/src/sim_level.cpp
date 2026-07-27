@@ -86,18 +86,17 @@ core::Span<const Aabb> visible_boxes() {
 Spawn level_spawn() { return level_loaded ? loaded_spawn : Spawn{}; }
 
 Spawn team_spawn(u32 team, u32 slot) {
-    // The teams muster on opposite edges of the plaza, facing each other.
-    Spawn spawn;
+    // Both teams muster from the map's own spawn point: one team stands on it,
+    // the other mirrors across the arena to the facing edge. Derived rather
+    // than written down, because a map that grows leaves hardcoded edges
+    // stranded in the middle of it.
+    const Spawn base = level_spawn();
     const f32 spread = static_cast<f32>(slot % 5) * 3.0f - 6.0f;
-    if (team == 0) {
-        spawn.x = spread;
-        spawn.z = 38.0f;
-        spawn.yaw = 0.0f;  // yaw 0 faces -Z, toward the far team
-    } else {
-        spawn.x = spread;
-        spawn.z = -41.0f;
-        spawn.yaw = 3.14159265f;  // faces +Z, toward the plaza
-    }
+    Spawn spawn;
+    spawn.x = base.x + spread;
+    spawn.y = base.y;
+    spawn.z = team == 0 ? base.z : -base.z;
+    spawn.yaw = team == 0 ? base.yaw : base.yaw + 3.14159265f;
     return spawn;
 }
 

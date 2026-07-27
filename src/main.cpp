@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
             frames_at_report = frames;
             scene.maybe_reload();
 
-            // The map editor loop: edit maps/plaza.umap, and collision and
+            // The map editor loop: edit maps/skyline.umap, and collision and
             // visuals rebuild live, like the shader hot-reload.
             const i64 mtime = core::file_mtime(MAP_PATH);
             if (mtime != map_mtime) {

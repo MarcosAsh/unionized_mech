@@ -125,13 +125,28 @@ void add_mesh_box(asset::MeshVertex* verts, u32* indices, u32* vert_cursor, u32*
 }  // namespace
 
 void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
-    constexpr i32 N = 50;
     constexpr f32 CELL = 2.0f;
-    const f32 half = static_cast<f32>(N) * CELL * 0.5f;
-    for (i32 i = 0; i < N; ++i) {
-        for (i32 j = 0; j < N; ++j) {
-            const f32 x = -half + static_cast<f32>(i) * CELL;
-            const f32 z = -half + static_cast<f32>(j) * CELL;
+
+    // The floor covers whatever the loaded map occupies rather than a fixed
+    // square, so growing the arena in the .umap cannot leave its far end
+    // hanging over the void. Collision boxes count: the perimeter is one.
+    const core::Span<const sim::Aabb> all = sim::level_boxes();
+    f32 lo_x = -50.0f;
+    f32 hi_x = 50.0f;
+    f32 lo_z = -50.0f;
+    f32 hi_z = 50.0f;
+    for (u64 c = 0; c < all.size(); ++c) {
+        lo_x = all[c].min_x < lo_x ? all[c].min_x : lo_x;
+        hi_x = all[c].max_x > hi_x ? all[c].max_x : hi_x;
+        lo_z = all[c].min_z < lo_z ? all[c].min_z : lo_z;
+        hi_z = all[c].max_z > hi_z ? all[c].max_z : hi_z;
+    }
+    const i32 nx = static_cast<i32>((hi_x - lo_x) / CELL) + 1;
+    const i32 nz = static_cast<i32>((hi_z - lo_z) / CELL) + 1;
+    for (i32 i = 0; i < nx; ++i) {
+        for (i32 j = 0; j < nz; ++j) {
+            const f32 x = lo_x + static_cast<f32>(i) * CELL;
+            const f32 z = lo_z + static_cast<f32>(j) * CELL;
             const bool light = ((i + j) & 1) != 0;
             const f32 r = light ? 0.38f : 0.24f;
             add_quad(verts, indices, x, z, CELL, r, r, r + 0.04f);

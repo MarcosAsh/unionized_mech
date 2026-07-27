@@ -40,7 +40,7 @@ add_subdirectory(src/render)
 
 # The one level. The game, the determinism harness, and the movement tests all
 # load this file, so none of them can drift onto geometry the others never see.
-set(UM_MAP_DEFINE "MAP_PATH=\"${CMAKE_SOURCE_DIR}/maps/plaza.umap\"")
+set(UM_MAP_DEFINE "MAP_PATH=\"${CMAKE_SOURCE_DIR}/maps/skyline.umap\"")
 
 add_executable(unionized_mech src/main.cpp tools/sanitizer_suppressions.cpp)
 target_link_libraries(unionized_mech PRIVATE platform gpu render)

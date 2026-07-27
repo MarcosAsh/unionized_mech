@@ -87,11 +87,11 @@ static void test_fixed_timestep() {
 }
 
 // Walking into a chest-high ledge vaults it instead of stopping dead. The map's
-// mantle stairs present a 1m face at z=-34; start clear of it and run in.
+// mantle stairs present a 1m face at z=18; start clear of it and run in.
 static void test_mantle_vaults_ledge() {
     World w{};
-    w.chars[0].x = -28.0f;
-    w.chars[0].z = -31.0f;
+    w.chars[0].x = -40.0f;
+    w.chars[0].z = 21.0f;
     bool topped = false;
     for (u32 i = 0; i < 180; ++i) {
         InputCmd c{};
@@ -112,8 +112,8 @@ static void test_mantle_vaults_ledge() {
 // reaching the top proves the ledge climb works.
 static void test_ledge_climb() {
     World w{};
-    w.chars[0].x = -18.0f;
-    w.chars[0].z = -31.0f;  // clear of the 3m mantle stair, whose face is z=-34
+    w.chars[0].x = -30.0f;
+    w.chars[0].z = 21.0f;  // clear of the 3m mantle stair, whose face is z=18
     bool topped = false;
     for (u32 i = 0; i < 300; ++i) {
         InputCmd c{};
