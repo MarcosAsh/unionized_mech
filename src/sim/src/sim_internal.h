@@ -12,6 +12,7 @@ constexpr f32 MECH_HALF_WIDTH = 1.6f;
 constexpr f32 MECH_HEIGHT = 4.4f;
 constexpr f32 MECH_EYE = 3.9f;
 constexpr u16 MECH_REBUILD_TICKS = 1800;  // thirty seconds
+constexpr u16 RESPAWN_TICKS = 180;        // three seconds
 
 /// Eye height above the feet, where rays start and bots look from. Must match
 /// the render camera exactly, or shots land away from the crosshair.

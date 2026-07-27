@@ -161,6 +161,32 @@ void step_union(World& next, const InputCmd cmds[MAX_PLAYERS]) {
             if (c.hurt_age < 255) {
                 c.hurt_age += 1;
             }
+            // The chassis crushes enemy robots it moves or lands on.
+            const bool crushing = mech.vx * mech.vx + mech.vz * mech.vz > 4.0f ||
+                                  mech.vy < -4.0f;
+            if (crushing) {
+                for (u32 j = 0; j < MAX_PLAYERS; ++j) {
+                    Character& target = next.chars[j];
+                    if (j == i || target.alive == 0 || target.merged != 0 ||
+                        target.team == c.team) {
+                        continue;
+                    }
+                    const f32 h = target.ducked != 0 ? DUCK_HEIGHT : HULL_HEIGHT;
+                    const bool overlap =
+                        target.x - HULL_HALF_WIDTH < mech.x + MECH_HALF_WIDTH &&
+                        target.x + HULL_HALF_WIDTH > mech.x - MECH_HALF_WIDTH &&
+                        target.z - HULL_HALF_WIDTH < mech.z + MECH_HALF_WIDTH &&
+                        target.z + HULL_HALF_WIDTH > mech.z - MECH_HALF_WIDTH &&
+                        target.y < mech.y + MECH_HEIGHT && target.y + h > mech.y;
+                    if (overlap) {
+                        target.health = 0;
+                        target.alive = 0;
+                        target.hurt_age = 0;
+                        target.respawn_ticks = RESPAWN_TICKS;
+                        c.kills += 1;
+                    }
+                }
+            }
             if (use_edge) {
                 eject_pilot(next, i);
             }

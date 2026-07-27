@@ -9,7 +9,6 @@ namespace {
 constexpr i16 SHOT_DAMAGE = 25;
 constexpr u8 FIRE_COOLDOWN_TICKS = 9;   // ~400 rounds per minute
 constexpr f32 SHOT_RANGE = 200.0f;
-constexpr u16 RESPAWN_TICKS = 180;      // three seconds
 
 // Ray versus box, the slab test. Returns the entry distance through `t` when
 // the ray hits within [0, max_t].

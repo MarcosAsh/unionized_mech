@@ -11,8 +11,8 @@ namespace {
 // bit-identical on every target.
 constexpr f32 LOOK_SCALE = 0.0025f;    // radians per mouse count
 constexpr f32 PITCH_LIMIT = 1.55334f;  // just under pi/2
-constexpr f32 GRAVITY = 20.0f;         // downward acceleration
-constexpr f32 JUMP_VELOCITY = 7.0f;    // upward launch speed on jump
+constexpr f32 GRAVITY = 15.0f;         // downward acceleration, TF-floaty
+constexpr f32 JUMP_VELOCITY = 6.1f;    // upward launch speed (same apex, longer air)
 constexpr f32 MAX_GROUND_SPEED = 8.0f; // target speed while running
 constexpr f32 GROUND_ACCEL = 10.0f;    // how fast ground speed is gained
 constexpr f32 AIR_ACCEL = 12.0f;       // air control strength
@@ -50,7 +50,7 @@ constexpr f32 WALL_PULL = 2.0f;           // gentle pull toward the wall to stay
 constexpr f32 WALLRUN_MIN_SPEED = 4.0f;   // along-wall speed needed to start
 constexpr f32 WALLRUN_ACCEL = 6.0f;       // along-wall acceleration while running
 constexpr f32 WALLRUN_MAX_SPEED = 16.0f;  // speed a wallrun builds toward
-constexpr f32 WALLRUN_GRAVITY = 6.0f;     // reduced gravity while wallrunning
+constexpr f32 WALLRUN_GRAVITY = 4.5f;     // reduced gravity while wallrunning
 constexpr f32 WALLRUN_MAX_FALL = 3.0f;    // cap downward speed on the wall
 constexpr u16 WALLRUN_MAX_TICKS = 120;    // how long a single wallrun can last
 constexpr f32 WALLJUMP_UP = 6.0f;         // upward launch off the wall

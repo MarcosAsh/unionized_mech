@@ -413,6 +413,37 @@ static void test_union_mech() {
     ASSERT(state.chars[1].kills >= 1);
 }
 
+// Driving the chassis over an enemy robot crushes it and credits the pilot.
+static void test_mech_crush() {
+    World w{};
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 3.0f;
+    w.chars[0].z = 0.0f;
+    w.chars[1].x = 0.0f;
+    w.chars[1].z = -5.0f;  // in the mech's path
+    w.chars[1].team = 1;
+
+    InputCmd use{};
+    use.buttons = static_cast<u16>(Button::Use);
+    World cur{};
+    simulate(w, use, cur);
+    ASSERT(cur.player().merged == 1);
+
+    InputCmd drive{};
+    drive.move_y = 1;  // yaw 0: straight at the enemy
+    for (u32 i = 0; i < 120 && cur.chars[1].alive != 0; ++i) {
+        World next{};
+        simulate(cur, drive, next);
+        cur = next;
+    }
+    ASSERT(cur.chars[1].alive == 0);
+    ASSERT(cur.player().kills >= 1);
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
@@ -424,6 +455,7 @@ int main() {
     test_hitscan_kills();
     test_bot_fights_back();
     test_union_mech();
+    test_mech_crush();
     test_map_round_trip();
     test_nav_pathing();
     core::log_info("sim_tests: all passed");
