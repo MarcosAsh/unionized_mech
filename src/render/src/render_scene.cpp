@@ -13,6 +13,11 @@ namespace render {
 
 namespace {
 
+/// The sky. One value drives the clear colour, what fog fades toward, and the
+/// upper half of the ambient term, so the horizon cannot drift from the haze in
+/// front of it.
+constexpr f32 SKY_COLOR[3] = {0.45f, 0.62f, 0.85f};
+
 /// Resting vertical field of view in radians: 70 degrees, the pilot value.
 constexpr f32 BASE_FOV = 1.2217f;
 
@@ -288,6 +293,14 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
     globals.level_tex = level_tex_;
+    globals.sky_color[0] = SKY_COLOR[0];
+    globals.sky_color[1] = SKY_COLOR[1];
+    globals.sky_color[2] = SKY_COLOR[2];
+    globals.sky_color[3] = 1.0f;
+    globals.cam_pos[0] = cam_x;
+    globals.cam_pos[1] = cam_y + eye_height;
+    globals.cam_pos[2] = cam_z;
+    globals.cam_pos[3] = 0.0f;
 
     const RenderModel* fill_models[9] = {&models_->duck,         &models_->gun,
                                          &models_->viewmodel,    &models_->trooper.base,
@@ -430,7 +443,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{0.45f, 0.62f, 0.85f, 1.0f}};
+    color.clearValue.color = {{SKY_COLOR[0], SKY_COLOR[1], SKY_COLOR[2], 1.0f}};
 
     VkRenderingAttachmentInfo depth{};
     depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

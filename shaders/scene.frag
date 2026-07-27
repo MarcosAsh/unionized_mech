@@ -1,17 +1,12 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
+
+#include "common.glsl"
 
 layout(set = 0, binding = 1) uniform texture2D textures[];
 layout(set = 0, binding = 3) uniform sampler default_sampler;
 layout(set = 0, binding = 4) uniform samplerShadow shadow_sampler;
-
-struct Globals {
-    mat4 sun_view_proj;
-    vec4 sun_dir;  // xyz normalized, toward the sun
-    uint shadow_tex;
-    uint level_tex;
-    uint pad0, pad1;
-};
 
 layout(std430, set = 0, binding = 0) readonly buffer GlobalsBuf {
     Globals g[];
@@ -54,13 +49,11 @@ float sun_shadow(Globals g, vec3 world) {
 
 void main() {
     Globals g = globals[pc.globals].g[pc.gslot];
-    vec3 n = normalize(frag_normal);
     // Tiling surface detail. Multiplying rather than replacing keeps the
     // per-box colour that tells the arena's landmarks apart.
     vec3 detail =
         texture(sampler2D(textures[nonuniformEXT(g.level_tex)], default_sampler), frag_uv).rgb;
-    float shadow = sun_shadow(g, frag_world);
-    // Same expression the mesh pass uses, so level and props sit in one light.
-    float diffuse = 0.35 + 0.65 * max(dot(n, g.sun_dir.xyz), 0.0) * shadow;
-    out_color = vec4(frag_color * detail * diffuse, 1.0);
+    out_color = vec4(shade(g, frag_color * detail, normalize(frag_normal), frag_world,
+                           sun_shadow(g, frag_world)),
+                     1.0);
 }

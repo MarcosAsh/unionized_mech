@@ -1,6 +1,9 @@
 #version 460
+#extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_ray_query : require
+
+#include "common.glsl"
 
 // The mesh fragment shader on ray tracing hardware: sun shadows come from a
 // ray query against the scene TLAS instead of the shadow map.
@@ -8,14 +11,6 @@
 layout(set = 0, binding = 1) uniform texture2D textures[];
 layout(set = 0, binding = 3) uniform sampler default_sampler;
 layout(set = 0, binding = 5) uniform accelerationStructureEXT tlas[3];
-
-struct Globals {
-    mat4 sun_view_proj;
-    vec4 sun_dir;  // xyz normalized, toward the sun
-    uint shadow_tex;
-    uint level_tex;
-    uint pad0, pad1;
-};
 
 layout(std430, set = 0, binding = 0) readonly buffer GlobalsBuf {
     Globals g[];
@@ -57,8 +52,7 @@ void main() {
     }
     Globals g = globals[pc.globals].g[pc.gslot];
     vec3 albedo = sampled.rgb * frag_color.rgb;
-    vec3 n = normalize(frag_normal);
-    float shadow = sun_shadow_rt(g, frag_world, n);
-    float diffuse = 0.35 + 0.65 * max(dot(n, g.sun_dir.xyz), 0.0) * shadow;
-    out_color = vec4(albedo * diffuse, 1.0);
+    out_color = vec4(shade(g, albedo, normalize(frag_normal), frag_world,
+                           sun_shadow_rt(g, frag_world, normalize(frag_normal))),
+                     1.0);
 }

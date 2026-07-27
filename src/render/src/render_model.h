@@ -83,9 +83,11 @@ struct SceneGlobals {
     u32 shadow_tex;
     u32 level_tex;
     u32 pad[2];
+    f32 sky_color[4];  ///< Drives the clear colour, the fog target, and ambient.
+    f32 cam_pos[4];    ///< Eye position, for specular and fog distance.
 };
 
-static_assert(sizeof(SceneGlobals) == 96, "SceneGlobals must match the shader layout");
+static_assert(sizeof(SceneGlobals) == 128, "SceneGlobals must match the shader layout");
 
 /// Indirect command slices per frame: the camera pass and the sun shadow pass
 /// cull independently, so each model carries two command runs per frame slot.
