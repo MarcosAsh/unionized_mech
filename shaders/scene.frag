@@ -9,8 +9,8 @@ struct Globals {
     mat4 sun_view_proj;
     vec4 sun_dir;  // xyz normalized, toward the sun
     uint shadow_tex;
-    uint pad0, pad1, pad2;
-    vec4 cam_pos;  // eye position, for resolving which way a normal faces
+    uint level_tex;
+    uint pad0, pad1;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer GlobalsBuf {
@@ -26,6 +26,8 @@ layout(push_constant) uniform Push {
 
 layout(location = 0) in vec3 frag_color;
 layout(location = 1) in vec3 frag_world;
+layout(location = 2) in vec3 frag_normal;
+layout(location = 3) in vec2 frag_uv;
 layout(location = 0) out vec4 out_color;
 
 float sun_shadow(Globals g, vec3 world) {
@@ -50,22 +52,15 @@ float sun_shadow(Globals g, vec3 world) {
     return lit / 9.0;
 }
 
-// The level pass carries no vertex normals: its boxes share eight vertices
-// across six faces, so there is nowhere to put one. The faces are flat, so the
-// screen-space derivatives of world position recover the exact face normal for
-// free. The cross product's sign depends on winding and framebuffer handedness,
-// so orient the result toward the eye rather than trusting a convention.
-vec3 face_normal(Globals g, vec3 world) {
-    vec3 n = normalize(cross(dFdx(world), dFdy(world)));
-    return dot(n, g.cam_pos.xyz - world) < 0.0 ? -n : n;
-}
-
 void main() {
     Globals g = globals[pc.globals].g[pc.gslot];
-    vec3 n = face_normal(g, frag_world);
+    vec3 n = normalize(frag_normal);
+    // Tiling surface detail. Multiplying rather than replacing keeps the
+    // per-box colour that tells the arena's landmarks apart.
+    vec3 detail =
+        texture(sampler2D(textures[nonuniformEXT(g.level_tex)], default_sampler), frag_uv).rgb;
     float shadow = sun_shadow(g, frag_world);
-    // Same expression the mesh pass uses, so level and models sit in the same
-    // light instead of the level reading flat next to lit props.
+    // Same expression the mesh pass uses, so level and props sit in one light.
     float diffuse = 0.35 + 0.65 * max(dot(n, g.sun_dir.xyz), 0.0) * shadow;
-    out_color = vec4(frag_color * diffuse, 1.0);
+    out_color = vec4(frag_color * detail * diffuse, 1.0);
 }

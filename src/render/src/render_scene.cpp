@@ -291,11 +291,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[1] = sun_dir.y;
     globals.sun_dir[2] = sun_dir.z;
     globals.sun_dir[3] = 0.0f;
-    globals.cam_pos[0] = cam_x;
-    globals.cam_pos[1] = cam_y + eye_height;
-    globals.cam_pos[2] = cam_z;
-    globals.cam_pos[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
+    globals.level_tex = level_tex_;
 
     const RenderModel* fill_models[9] = {&models_->duck,         &models_->gun,
                                          &models_->viewmodel,    &models_->trooper.base,

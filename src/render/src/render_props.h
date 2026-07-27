@@ -12,10 +12,13 @@
 
 namespace render {
 
-/// Level pass vertex: position and colour, matching shaders/scene.vert.
+/// Level pass vertex, matching the Vertex struct in shaders/scene.vert. Padded
+/// to vec4s so the std430 stride needs no thought.
 struct LevelVertex {
     f32 pos[4];
     f32 color[4];
+    f32 normal[4];
+    f32 uv[4];  ///< xy are the texture coordinates; zw pad the stride.
 };
 
 /// Decorative duck placements on the plaza.
@@ -31,9 +34,14 @@ constexpr DuckSpot DUCKS[3] = {
     {{2.0f, 0.0f, -9.0f}, -1.2f, 2.5f},
 };
 
-/// Build the level geometry: the checkered floor and the visible collision
-/// boxes.
+/// Build the level geometry: the floor and the visible collision boxes, with
+/// per-face normals and world-scaled texture coordinates.
 void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
+
+/// A tiling surface detail texture for the level pass, generated rather than
+/// loaded so the build stays free of binary content. Real material art drops
+/// into the same slot.
+[[nodiscard]] u32 make_level_texture(gpu::Renderer& gpu);
 
 /// A placeholder first-person weapon made of boxes. Establishes the viewmodel
 /// system that real arm art replaces later.

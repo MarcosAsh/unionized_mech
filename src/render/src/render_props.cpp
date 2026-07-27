@@ -8,45 +8,84 @@ namespace render {
 
 namespace {
 
-void add_level_vertex(core::Array<LevelVertex>& verts, f32 x, f32 y, f32 z, f32 r, f32 g, f32 b) {
-    LevelVertex v;
-    v.pos[0] = x;
-    v.pos[1] = y;
-    v.pos[2] = z;
-    v.pos[3] = 1.0f;
-    v.color[0] = r;
-    v.color[1] = g;
-    v.color[2] = b;
-    v.color[3] = 1.0f;
-    verts.push(v);
+// One texture repeat every two metres, the scale the arena is laid out on.
+constexpr f32 LEVEL_UV_SCALE = 0.5f;
+
+void add_level_vertex(core::Array<LevelVertex>& verts, core::Vec3 p, const f32 rgb[3],
+                      core::Vec3 n, f32 u, f32 v) {
+    LevelVertex out;
+    out.pos[0] = p.x;
+    out.pos[1] = p.y;
+    out.pos[2] = p.z;
+    out.pos[3] = 1.0f;
+    out.color[0] = rgb[0];
+    out.color[1] = rgb[1];
+    out.color[2] = rgb[2];
+    out.color[3] = 1.0f;
+    out.normal[0] = n.x;
+    out.normal[1] = n.y;
+    out.normal[2] = n.z;
+    out.normal[3] = 0.0f;
+    out.uv[0] = u;
+    out.uv[1] = v;
+    out.uv[2] = 0.0f;
+    out.uv[3] = 0.0f;
+    verts.push(out);
 }
 
-void add_quad(core::Array<LevelVertex>& verts, core::Array<u32>& indices, f32 x, f32 z, f32 cell,
-              f32 r, f32 g, f32 b) {
-    const u32 base = static_cast<u32>(verts.size());
-    add_level_vertex(verts, x, 0.0f, z, r, g, b);
-    add_level_vertex(verts, x + cell, 0.0f, z, r, g, b);
-    add_level_vertex(verts, x + cell, 0.0f, z + cell, r, g, b);
-    add_level_vertex(verts, x, 0.0f, z + cell, r, g, b);
+void push_quad(core::Array<u32>& indices, u32 base) {
     const u32 quad[6] = {base, base + 1, base + 2, base, base + 2, base + 3};
     for (u32 i = 0; i < 6; ++i) {
         indices.push(quad[i]);
     }
 }
 
+// A floor cell. Its texture coordinates come from world position, so adjacent
+// cells line up into one continuous surface instead of each restarting at zero.
+void add_quad(core::Array<LevelVertex>& verts, core::Array<u32>& indices, f32 x, f32 z, f32 cell,
+              f32 r, f32 g, f32 b) {
+    const u32 base = static_cast<u32>(verts.size());
+    const f32 rgb[3] = {r, g, b};
+    const core::Vec3 up{0.0f, 1.0f, 0.0f};
+    const f32 x1 = x + cell;
+    const f32 z1 = z + cell;
+    add_level_vertex(verts, {x, 0.0f, z}, rgb, up, x * LEVEL_UV_SCALE, z * LEVEL_UV_SCALE);
+    add_level_vertex(verts, {x1, 0.0f, z}, rgb, up, x1 * LEVEL_UV_SCALE, z * LEVEL_UV_SCALE);
+    add_level_vertex(verts, {x1, 0.0f, z1}, rgb, up, x1 * LEVEL_UV_SCALE, z1 * LEVEL_UV_SCALE);
+    add_level_vertex(verts, {x, 0.0f, z1}, rgb, up, x * LEVEL_UV_SCALE, z1 * LEVEL_UV_SCALE);
+    push_quad(indices, base);
+}
+
+// A box as six separate faces. Sharing eight corners between them was cheaper
+// but left nowhere to put a per-face normal or a sane texture coordinate, which
+// is why the level used to shade flat.
 void add_level_box(core::Array<LevelVertex>& verts, core::Array<u32>& indices, f32 x0, f32 y0,
                    f32 z0, f32 x1, f32 y1, f32 z1, f32 r, f32 g, f32 b) {
-    const u32 base = static_cast<u32>(verts.size());
-    const f32 xs[8] = {x0, x1, x1, x0, x0, x1, x1, x0};
-    const f32 ys[8] = {y0, y0, y1, y1, y0, y0, y1, y1};
-    const f32 zs[8] = {z0, z0, z0, z0, z1, z1, z1, z1};
-    for (u32 i = 0; i < 8; ++i) {
-        add_level_vertex(verts, xs[i], ys[i], zs[i], r, g, b);
-    }
-    const u32 faces[36] = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 4, 0, 3, 4, 3, 7,
-                           1, 5, 6, 1, 6, 2, 3, 2, 6, 3, 6, 7, 4, 5, 1, 4, 1, 0};
-    for (u32 i = 0; i < 36; ++i) {
-        indices.push(base + faces[i]);
+    const f32 rgb[3] = {r, g, b};
+    const core::Vec3 center{(x0 + x1) * 0.5f, (y0 + y1) * 0.5f, (z0 + z1) * 0.5f};
+    const core::Vec3 half{(x1 - x0) * 0.5f, (y1 - y0) * 0.5f, (z1 - z0) * 0.5f};
+    const core::Vec3 n[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    const core::Vec3 uax[6] = {{0, 0, -1}, {0, 0, 1}, {1, 0, 0}, {1, 0, 0}, {1, 0, 0}, {-1, 0, 0}};
+    const f32 su[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
+    const f32 sv[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+    for (u32 f = 0; f < 6; ++f) {
+        const core::Vec3 vax = cross(n[f], uax[f]);
+        const u32 base = static_cast<u32>(verts.size());
+        // Half extent along each of the face's own axes, so the texture keeps a
+        // constant world density however large the box is.
+        const f32 hu = std::fabs(uax[f].x) * half.x + std::fabs(uax[f].y) * half.y +
+                       std::fabs(uax[f].z) * half.z;
+        const f32 hv = std::fabs(vax.x) * half.x + std::fabs(vax.y) * half.y +
+                       std::fabs(vax.z) * half.z;
+        for (u32 k = 0; k < 4; ++k) {
+            core::Vec3 p = center;
+            p += core::Vec3{n[f].x * half.x, n[f].y * half.y, n[f].z * half.z};
+            p += core::Vec3{uax[f].x * half.x, uax[f].y * half.y, uax[f].z * half.z} * su[k];
+            p += core::Vec3{vax.x * half.x, vax.y * half.y, vax.z * half.z} * sv[k];
+            add_level_vertex(verts, p, rgb, n[f], su[k] * hu * LEVEL_UV_SCALE,
+                             sv[k] * hv * LEVEL_UV_SCALE);
+        }
+        push_quad(indices, base);
     }
 }
 
@@ -104,6 +143,31 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
         add_level_box(verts, indices, b.min_x, b.min_y, b.min_z, b.max_x, b.max_y, b.max_z, col[0],
                       col[1], col[2]);
     }
+}
+
+u32 make_level_texture(gpu::Renderer& gpu) {
+    // A tiling surface: a recessed seam along two edges so tiling reads as
+    // panelling, plus a fine deterministic grain so a large flat face does not
+    // look like poured plastic. Generated, so nothing binary enters the build.
+    constexpr u32 N = 64;
+    static u8 px[N * N * 4];
+    for (u32 y = 0; y < N; ++y) {
+        for (u32 x = 0; x < N; ++x) {
+            const bool seam = x < 2 || y < 2;
+            u32 h = (x * 73856093u) ^ (y * 19349663u);
+            h ^= h >> 13;
+            h *= 0x5bd1e995u;
+            h ^= h >> 15;
+            i32 v = (seam ? 150 : 226) + static_cast<i32>(h & 15u) - 8;
+            v = v < 0 ? 0 : (v > 255 ? 255 : v);
+            u8* p = &px[(y * N + x) * 4];
+            p[0] = static_cast<u8>(v);
+            p[1] = static_cast<u8>(v);
+            p[2] = static_cast<u8>(v);
+            p[3] = 255;
+        }
+    }
+    return gpu.create_texture(px, N, N).bindless_index;
 }
 
 RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {

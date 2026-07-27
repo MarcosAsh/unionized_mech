@@ -13,8 +13,8 @@ struct Globals {
     mat4 sun_view_proj;
     vec4 sun_dir;  // xyz normalized, toward the sun
     uint shadow_tex;
-    uint pad0, pad1, pad2;
-    vec4 cam_pos;  // eye position, for resolving which way a normal faces
+    uint level_tex;
+    uint pad0, pad1;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer GlobalsBuf {
