@@ -38,14 +38,18 @@ add_subdirectory(src/platform)
 add_subdirectory(src/gpu)
 add_subdirectory(src/render)
 
+# The one level. The game, the determinism harness, and the movement tests all
+# load this file, so none of them can drift onto geometry the others never see.
+set(UM_MAP_DEFINE "MAP_PATH=\"${CMAKE_SOURCE_DIR}/maps/plaza.umap\"")
+
 add_executable(unionized_mech src/main.cpp tools/sanitizer_suppressions.cpp)
 target_link_libraries(unionized_mech PRIVATE platform gpu render)
-target_compile_definitions(unionized_mech PRIVATE
-    "MAP_PATH=\"${CMAKE_SOURCE_DIR}/maps/plaza.umap\"")
+target_compile_definitions(unionized_mech PRIVATE "${UM_MAP_DEFINE}")
 
 # Headless determinism runner: steps the sim and prints the world hash.
 add_executable(um_headless tools/headless.cpp)
 target_link_libraries(um_headless PRIVATE sim)
+target_compile_definitions(um_headless PRIVATE "${UM_MAP_DEFINE}")
 
 # Headless Vulkan bring-up check: real device, validation active, no window.
 add_executable(gpu_probe tools/gpu_probe.cpp)
@@ -66,6 +70,7 @@ add_test(NAME core_tests COMMAND core_tests)
 
 add_executable(sim_tests tests/sim_tests.cpp)
 target_link_libraries(sim_tests PRIVATE sim)
+target_compile_definitions(sim_tests PRIVATE "${UM_MAP_DEFINE}")
 add_test(NAME sim_tests COMMAND sim_tests)
 
 add_executable(math_tests tests/math_tests.cpp)

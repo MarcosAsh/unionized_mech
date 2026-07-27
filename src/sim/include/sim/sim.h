@@ -218,9 +218,11 @@ struct Spawn {
 /// Load a map file, replacing the active level. The format is line-based text:
 /// `spawn x y z yaw`, `box x0 y0 z0 x1 y1 z1` for visible collision boxes,
 /// `cbox ...` for invisible collision volumes, and `node x y z` for bot
-/// waypoints (linked automatically to reachable neighbours). Without a loaded
-/// map the built-in level is active. Loading is an editor event, not a
-/// frame-loop operation; `scratch` holds the file bytes during parsing.
+/// waypoints (linked automatically to reachable neighbours). There is no
+/// built-in level: until this succeeds the world holds nothing but the implicit
+/// floor, so every entry point must load a map before stepping the simulation.
+/// Loading is an editor event, not a frame-loop operation; `scratch` holds the
+/// file bytes during parsing.
 /// # Errors
 /// A static message when the file is missing or malformed. The previous level
 /// stays active on error.

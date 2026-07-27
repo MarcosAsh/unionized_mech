@@ -135,11 +135,13 @@ int main(int argc, char** argv) {
     }
     gpu::Renderer renderer = static_cast<gpu::Renderer&&>(rend_result.value());
 
-    // The map loads before the scene so the level geometry reflects it. A
-    // missing file falls back to the built-in level.
+    // The map loads before the scene so the level geometry reflects it. There
+    // is nothing to fall back to, and an empty arena is worse than a clear
+    // failure, so this is fatal.
     core::Result<core::Unit, const char*> map_loaded = sim::load_level(scratch, MAP_PATH);
     if (map_loaded.is_err()) {
-        core::log_infof("map: %s (%s), using built-in level", MAP_PATH, map_loaded.error());
+        core::log_errorf("map: %s (%s)", MAP_PATH, map_loaded.error());
+        return 1;
     }
     i64 map_mtime = core::file_mtime(MAP_PATH);
 

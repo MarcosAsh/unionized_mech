@@ -97,12 +97,12 @@ static void test_fixed_timestep() {
     ASSERT(count == static_cast<u32>(1.0 / dt));
 }
 
-// Walking into a chest-high ledge vaults it instead of stopping dead. The
-// level's mantle stairs put a 1m step at z=-36 in front of a spawn at z=-34.
+// Walking into a chest-high ledge vaults it instead of stopping dead. The map's
+// mantle stairs present a 1m face at z=-34; start clear of it and run in.
 static void test_mantle_vaults_ledge() {
     World w{};
     w.chars[0].x = -28.0f;
-    w.chars[0].z = -34.0f;
+    w.chars[0].z = -31.0f;
     bool topped = false;
     for (u32 i = 0; i < 180; ++i) {
         InputCmd c{};
@@ -124,7 +124,7 @@ static void test_mantle_vaults_ledge() {
 static void test_ledge_climb() {
     World w{};
     w.chars[0].x = -18.0f;
-    w.chars[0].z = -34.0f;  // south of the 3m mantle stair at z=-36
+    w.chars[0].z = -31.0f;  // clear of the 3m mantle stair, whose face is z=-34
     bool topped = false;
     for (u32 i = 0; i < 300; ++i) {
         InputCmd c{};
@@ -483,6 +483,12 @@ static void test_step_over_kerb() {
 }
 
 int main() {
+    // Every movement test below runs against the shipping level, so geometry
+    // the game plays and geometry the tests assert on cannot drift apart. The
+    // map-loading tests at the end deliberately replace it and so run last.
+    core::Arena level_arena = core::Arena::with_capacity(1u << 20);
+    ASSERT(load_level(level_arena, MAP_PATH).is_ok());
+
     test_replay_twice_identical();
     test_simulate_is_pure();
     test_tick_advances();

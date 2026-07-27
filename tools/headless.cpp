@@ -75,6 +75,14 @@ static u64 run(core::Span<const InputCmd> cmds) {
 int main(int argc, char** argv) {
     core::Arena arena = core::Arena::with_capacity(16ull << 20);
 
+    // Determinism has to be checked against the level the game actually plays,
+    // not the built-in fallback.
+    core::Result<core::Unit, const char*> level = load_level(arena, MAP_PATH);
+    if (level.is_err()) {
+        core::log_errorf("headless: %s", level.error());
+        return 1;
+    }
+
     if (argc >= 3 && std::strcmp(argv[1], "play") == 0) {
         core::Result<core::Span<const InputCmd>, const char*> tape = tape_load(arena, argv[2]);
         if (tape.is_err()) {
