@@ -540,6 +540,44 @@ static void test_grenade_damages_enemy() {
     ASSERT(hurt);
 }
 
+// The slide entry boost is rate limited. Tapping crouch on and off re-enters
+// the slide state every other tick, and without a cooldown each entry pays out
+// again, which makes a crouch-mash the fastest way to move in the game. Run on
+// open floor well outside the arena so only the boost is under test.
+static void test_slide_boost_rate_limited() {
+    World w{};
+    init_match(w);
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 200.0f;
+    w.chars[0].z = 200.0f;
+
+    World cur = w;
+    f32 peak = 0.0f;
+    for (u32 i = 0; i < 300; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.move_y = 1;
+        if (i > 60 && (i % 2) == 0) {  // sprint up first, then mash crouch
+            c.buttons = static_cast<u16>(Button::Crouch);
+        }
+        World next{};
+        simulate(cur, c, next);
+        cur = next;
+        const f32 s = std::sqrt(cur.player().vx * cur.player().vx +
+                                cur.player().vz * cur.player().vz);
+        if (s > peak) {
+            peak = s;
+        }
+    }
+    // One boost off a 6.6 m/s sprint lands near 8.6. Repeated boosts climb to
+    // the 12.0 slide ceiling, so anything past 10 means the limiter is gone.
+    ASSERT(peak < 10.0f);
+}
+
 int main() {
     // Every movement test below runs against the shipping level, so geometry
     // the game plays and geometry the tests assert on cannot drift apart. The
@@ -560,6 +598,7 @@ int main() {
     test_mech_crush();
     test_map_round_trip();
     test_nav_pathing();
+    test_slide_boost_rate_limited();
     test_grenade_damages_enemy();
     test_step_over_kerb();
     test_map_nav_fully_connected();

@@ -23,6 +23,7 @@ constexpr f32 STOP_SPEED = 1.5f;       // floor on friction so slow stops are cr
 constexpr f32 SLIDE_MIN_SPEED = 5.0f;     // crouch above this speed becomes a slide
 constexpr f32 SLIDE_DECEL = 1.27f;        // flat slide bleed, replaces friction
 constexpr f32 SLIDE_BOOST = 2.0f;         // entry burst, see the note at its use
+constexpr u8 SLIDE_BOOST_COOLDOWN = 120;  // two seconds before entry pays again
 constexpr f32 SLIDE_STEER_SPEED = 4.0f;   // weak steering wish speed while sliding
 constexpr f32 SLIDE_STEER_ACCEL = 4.0f;   // weak steering accel while sliding
 
@@ -181,11 +182,12 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         }
     }
 
-    // Slide entry burst, paid once. A pure decay model only pays out on a
-    // gradient, and this arena is flat, so entry pays instead and the decel
-    // above takes it back over the length of the slide. Revisit once the level
-    // has slopes worth sliding down.
-    if (sliding && prev_c.state != MoveState::Slide) {
+    // Slide entry burst, paid once and then rate-limited. Without the cooldown
+    // a slide can be re-entered every few ticks, and tapping crouch becomes a
+    // free speed pump that outruns everything else in the game.
+    c.slide_cooldown = prev_c.slide_cooldown > 0 ? static_cast<u8>(prev_c.slide_cooldown - 1)
+                                                 : static_cast<u8>(0);
+    if (sliding && prev_c.state != MoveState::Slide && c.slide_cooldown == 0) {
         const f32 hs = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
         if (hs > 0.0f) {
             f32 target = hs + SLIDE_BOOST;
@@ -196,6 +198,7 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
             c.vx *= scale;
             c.vz *= scale;
         }
+        c.slide_cooldown = SLIDE_BOOST_COOLDOWN;
     }
 
     // Wallrun.

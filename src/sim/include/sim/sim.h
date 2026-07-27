@@ -130,7 +130,7 @@ struct Character {
     u8 reload_was_down = 0;  ///< Reload button last tick, for edge detection.
     u8 grenades = 0;         ///< Grenades left to throw this life.
     u8 grenade_was_down = 0; ///< Grenade button last tick, for edge detection.
-    u8 pad0 = 0;
+    u8 slide_cooldown = 0;   ///< Ticks until a slide entry can pay out again.
     u8 pad1 = 0;
     u8 pad2 = 0;
 };

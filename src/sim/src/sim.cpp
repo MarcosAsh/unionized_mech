@@ -20,8 +20,11 @@ u64 fnv1a(u64 h, const void* data, u64 n) {
 InputCmd scripted_input(u32 tick) {
     InputCmd c{};
     c.tick = TickId{tick};
-    c.move_x = static_cast<i8>((tick % 4 < 2) ? 1 : -1);
-    c.move_y = static_cast<i8>((tick % 8 < 4) ? 1 : 0);
+    // Held long enough to actually build speed. Flipping the stick every couple
+    // of ticks looks like coverage but never crosses the slide threshold, so
+    // the crouch bit below would exercise nothing.
+    c.move_x = static_cast<i8>((tick % 64 < 32) ? 1 : -1);
+    c.move_y = static_cast<i8>((tick % 120 < 100) ? 1 : 0);
     c.look_dx = static_cast<i16>(static_cast<i32>(tick % 16) - 8);
     c.look_dy = static_cast<i16>(static_cast<i32>((tick / 2) % 8) - 4);
     u16 buttons = 0;
