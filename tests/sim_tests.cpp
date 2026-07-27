@@ -119,7 +119,7 @@ static void test_mantle_vaults_ledge() {
 }
 
 // Holding jump against a 3m wall climbs it. Too tall for jump plus mantle
-// alone (jump apex 1.2m leaves the lip 1.8m away, past mantle reach), so
+// alone (jump apex 1.52m leaves the lip 1.48m away, past mantle reach), so
 // reaching the top proves the ledge climb works.
 static void test_ledge_climb() {
     World w{};

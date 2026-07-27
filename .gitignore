@@ -9,3 +9,4 @@ compile_commands.json
 # Local working docs. README is the only tracked markdown.
 /ARCHITECTURE.md
 /NEXT_STEPS.md
+/TUNING.md

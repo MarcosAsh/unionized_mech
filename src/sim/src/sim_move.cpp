@@ -11,9 +11,9 @@ namespace {
 // bit-identical on every target.
 constexpr f32 LOOK_SCALE = 0.0025f;    // radians per mouse count
 constexpr f32 PITCH_LIMIT = 1.55334f;  // just under pi/2
-constexpr f32 GRAVITY = 15.0f;         // downward acceleration, TF-floaty
-constexpr f32 JUMP_VELOCITY = 6.1f;    // upward launch speed (same apex, longer air)
-constexpr f32 MAX_GROUND_SPEED = 8.0f; // target speed while running
+constexpr f32 GRAVITY = 15.0f;          // sv_gravity 750 x gravityscale 0.80
+constexpr f32 JUMP_VELOCITY = 6.76f;    // jumpheight 60u: sqrt(2 * G * 1.524m)
+constexpr f32 MAX_GROUND_SPEED = 6.6f;  // sprintspeed 260 u/s
 constexpr f32 GROUND_ACCEL = 10.0f;    // how fast ground speed is gained
 constexpr f32 AIR_ACCEL = 12.0f;       // air control strength
 constexpr f32 AIR_MAX_SPEED = 1.5f;    // capped air wish speed enables airstrafe
@@ -45,16 +45,17 @@ constexpr f32 CLIMB_SPEED = 3.5f;  // upward speed while climbing
 
 constexpr f32 LAND_IMPACT_DECAY = 0.85f;  // per-tick decay of the landing dip
 
-// Wallrun. Speed builds the longer you run, which is the Titanfall signature.
-constexpr f32 WALL_PULL = 2.0f;           // gentle pull toward the wall to stay stuck
-constexpr f32 WALLRUN_MIN_SPEED = 4.0f;   // along-wall speed needed to start
-constexpr f32 WALLRUN_ACCEL = 6.0f;       // along-wall acceleration while running
-constexpr f32 WALLRUN_MAX_SPEED = 16.0f;  // speed a wallrun builds toward
-constexpr f32 WALLRUN_GRAVITY = 4.5f;     // reduced gravity while wallrunning
-constexpr f32 WALLRUN_MAX_FALL = 3.0f;    // cap downward speed on the wall
-constexpr u16 WALLRUN_MAX_TICKS = 120;    // how long a single wallrun can last
-constexpr f32 WALLJUMP_UP = 6.0f;         // upward launch off the wall
-constexpr f32 WALLJUMP_PUSH = 6.0f;       // push away from the wall
+// Wallrun. Speed snaps up hard and the wall lets go of you gradually, which is
+// the Titanfall signature. Numbers converted from the pilot definitions.
+constexpr f32 WALL_PULL = 2.0f;             // gentle pull toward the wall to stay stuck
+constexpr f32 WALLRUN_MIN_SPEED = 4.0f;     // along-wall speed needed to start
+constexpr f32 WALLRUN_ACCEL = 38.1f;        // wallrunAccelerateHorizontal 1500 u/s^2
+constexpr f32 WALLRUN_MAX_SPEED = 10.7f;    // wallrunMaxSpeedHorizontal 420 u/s
+constexpr f32 WALLRUN_MAX_FALL = 3.0f;      // cap downward speed on the wall
+constexpr u16 WALLRUN_MAX_TICKS = 105;      // wallrun_timeLimit 1.75s
+constexpr u16 WALLRUN_GRAVITY_RAMP = 42;    // wallrun_gravityRampUpTime 0.7s
+constexpr f32 WALLJUMP_UP = 5.84f;          // wallrunJumpUpSpeed 230 u/s
+constexpr f32 WALLJUMP_PUSH = 5.21f;        // wallrunJumpOutwardSpeed 205 u/s
 
 }  // namespace
 
@@ -196,7 +197,18 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         }
     }
 
-    c.vy -= (wallrunning ? WALLRUN_GRAVITY : GRAVITY) * SIM_DT;
+    // Gravity eases in over the first stretch of a wallrun rather than sitting
+    // at a flat reduced value. Entering sticks you to the wall; the longer you
+    // hang on, the more the wall gives you back to gravity.
+    f32 gravity = GRAVITY;
+    if (wallrunning) {
+        const u16 held = prev_c.wallrun_ticks;
+        gravity = held >= WALLRUN_GRAVITY_RAMP
+                      ? GRAVITY
+                      : GRAVITY * (static_cast<f32>(held) /
+                                   static_cast<f32>(WALLRUN_GRAVITY_RAMP));
+    }
+    c.vy -= gravity * SIM_DT;
     if (wallrunning && c.vy < -WALLRUN_MAX_FALL) {
         c.vy = -WALLRUN_MAX_FALL;
     }
