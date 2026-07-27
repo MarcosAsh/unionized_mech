@@ -13,7 +13,6 @@ constexpr f32 LOOK_SCALE = 0.0025f;    // radians per mouse count
 constexpr f32 PITCH_LIMIT = 1.55334f;  // just under pi/2
 constexpr f32 GRAVITY = 15.0f;          // sv_gravity 750 x gravityscale 0.80
 constexpr f32 JUMP_VELOCITY = 6.76f;    // jumpheight 60u: sqrt(2 * G * 1.524m)
-constexpr f32 MAX_GROUND_SPEED = 6.6f;  // sprintspeed 260 u/s
 constexpr f32 GROUND_ACCEL = 10.0f;    // how fast ground speed is gained
 constexpr f32 AIR_ACCEL = 12.0f;       // air control strength
 constexpr f32 AIR_MAX_SPEED = 1.5f;    // capped air wish speed enables airstrafe
@@ -23,7 +22,6 @@ constexpr f32 STOP_SPEED = 1.5f;       // floor on friction so slow stops are cr
 constexpr f32 SLIDE_MIN_SPEED = 5.0f;     // crouch above this speed becomes a slide
 constexpr f32 SLIDE_DECEL = 1.27f;        // slidedecel 50 u/s^2, replaces friction
 constexpr f32 SLIDE_BOOST = 2.0f;         // entry burst, see the note at its use
-constexpr f32 SLIDE_MAX_SPEED = 12.0f;    // ceiling the entry burst cannot pass
 constexpr f32 SLIDE_STEER_SPEED = 4.0f;   // weak steering wish speed while sliding
 constexpr f32 SLIDE_STEER_ACCEL = 4.0f;   // weak steering accel while sliding
 
@@ -145,7 +143,7 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
             wish_speed = SLIDE_STEER_SPEED;
             accel = SLIDE_STEER_ACCEL;
         } else if (grounded) {
-            wish_speed = MAX_GROUND_SPEED;
+            wish_speed = RUN_SPEED;
             accel = GROUND_ACCEL;
         } else {
             wish_speed = AIR_MAX_SPEED;
@@ -172,8 +170,8 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         const f32 hs = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
         if (hs > 0.0f) {
             f32 target = hs + SLIDE_BOOST;
-            if (target > SLIDE_MAX_SPEED) {
-                target = SLIDE_MAX_SPEED;
+            if (target > TOP_SPEED) {
+                target = TOP_SPEED;
             }
             const f32 scale = target / hs;
             c.vx *= scale;

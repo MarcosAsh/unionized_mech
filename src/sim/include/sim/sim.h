@@ -70,6 +70,15 @@ static_assert(std::is_standard_layout_v<InputCmd>);
 /// The character's movement mode this tick.
 enum class MoveState : u8 { Ground, Slide, Air, Wallrun, Climb };
 
+/// Flat-out running speed, in metres per second.
+constexpr f32 RUN_SPEED = 6.6f;
+
+/// The fastest a character travels horizontally under its own power, reached by
+/// sliding. Presentation scales its speed cues between these two rather than
+/// keeping a second copy of the movement tuning, which drifts the moment the
+/// controller is retuned.
+constexpr f32 TOP_SPEED = 12.0f;
+
 /// Characters in a match: the player in slot 0 and nine bots, five per team.
 constexpr u32 MAX_PLAYERS = 10;
 

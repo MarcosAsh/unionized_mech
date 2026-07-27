@@ -13,6 +13,13 @@ namespace render {
 
 namespace {
 
+/// Resting vertical field of view in radians: 70 degrees, the pilot value.
+constexpr f32 BASE_FOV = 1.2217f;
+
+/// How far the field of view opens at top speed, as a fraction of BASE_FOV.
+/// Matches slideFOVScale 1.1.
+constexpr f32 FOV_SPEED_SCALE = 0.1f;
+
 struct PushConstants {
     f32 view_proj[16];
     u32 vbuf;
@@ -89,16 +96,18 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     cur_roll_ += (target_roll - cur_roll_) * 0.2f;
 
     // Speed-linked field of view, the strongest "I am fast" signal. Widens as
-    // horizontal speed climbs past run speed, eased to avoid pumping.
+    // horizontal speed climbs from run speed to the slide ceiling, eased to
+    // avoid pumping. The bounds come from sim so retuning the controller cannot
+    // silently decalibrate the cue.
     const f32 hspeed = std::sqrt(curr.player().vx * curr.player().vx + curr.player().vz * curr.player().vz);
-    f32 speed_frac = (hspeed - 8.0f) / 8.0f;
+    f32 speed_frac = (hspeed - sim::RUN_SPEED) / (sim::TOP_SPEED - sim::RUN_SPEED);
     if (speed_frac < 0.0f) {
         speed_frac = 0.0f;
     }
     if (speed_frac > 1.0f) {
         speed_frac = 1.0f;
     }
-    const f32 target_fov = 1.2217f + 0.24f * speed_frac;
+    const f32 target_fov = BASE_FOV + BASE_FOV * FOV_SPEED_SCALE * speed_frac;
     cur_fov_ += (target_fov - cur_fov_) * 0.08f;
 
     const f32 aspect =
