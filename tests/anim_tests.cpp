@@ -6,6 +6,8 @@
 #include "core/log.h"
 #include "core/types.h"
 
+#include <cstring>
+
 using namespace anim;
 using core::Mat4;
 using core::Quat;
@@ -36,6 +38,8 @@ Skeleton two_joint_skeleton() {
     // identity.
     s.inverse_bind[0] = Mat4{};
     s.inverse_bind[1] = Mat4::translation(Vec3{0.0f, -1.0f, 0.0f});
+    std::strcpy(s.names[0], "Root");
+    std::strcpy(s.names[1], "Wrist.R");
     return s;
 }
 
@@ -149,6 +153,11 @@ static void test_round_trips() {
     ASSERT(skel_back.value().parents[1] == 0);
     ASSERT(near_v(skel_back.value().rest_pos[1], Vec3{0.0f, 1.0f, 0.0f}));
     ASSERT(skel_back.value().root_transform == Mat4::scale(Vec3{2.0f, 2.0f, 2.0f}));
+    // Names survive the file, because attachments resolve their joint by name.
+    ASSERT(joint_index(skel_back.value(), "Wrist.R") == 1);
+    ASSERT(joint_index(skel_back.value(), "Root") == 0);
+    ASSERT(joint_index(skel_back.value(), "Ankle.L") == -1);
+    ASSERT(joint_index(skel_back.value(), nullptr) == -1);
 
     const f32 times[2] = {0.0f, 1.0f};
     const f32 tvals[6] = {0.0f, 0.0f, 0.0f, 1.0f, 2.0f, 3.0f};

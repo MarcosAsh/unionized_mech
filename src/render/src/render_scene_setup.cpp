@@ -69,8 +69,14 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->gun =
         model_load(gpu, scratch, ASSET_DIR "/blaster", scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
-    scene.models_->trooper = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/robot",
-                                                scene.models_->white_texture, sim::MAX_PLAYERS);
+    scene.models_->trooper =
+        skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/robot",
+                           scene.models_->white_texture, sim::MAX_PLAYERS, TROOPER_RIG.gun_joint);
+    // The same weapon mesh a second time. Viewmodel records are drawn under the
+    // viewmodel projection, so a world-space copy needs its own record set, the
+    // way the tracers already split.
+    scene.models_->bot_gun =
+        model_load(gpu, scratch, ASSET_DIR "/blaster", scene.models_->white_texture);
     if (!scene.models_->trooper.base.loaded) {
         scene.models_->trooper.base = make_trooper(gpu, scene.models_->white_texture);
     }

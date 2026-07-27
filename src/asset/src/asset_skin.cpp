@@ -3,6 +3,8 @@
 
 #include <cgltf.h>
 
+#include <cstring>
+
 namespace asset {
 
 namespace {
@@ -97,6 +99,14 @@ bool import_skeleton(const cgltf_data* data, SkinImport* out) {
         }
         if (node->has_scale) {
             skel.rest_scale[e] = core::Vec3{node->scale[0], node->scale[1], node->scale[2]};
+        }
+
+        // Names carry through so attachments can name their joint. Truncation
+        // is fine: a rig with two joints agreeing in the first 31 characters
+        // would be a naming problem in the source art.
+        if (node->name != nullptr) {
+            std::strncpy(skel.names[e], node->name, anim::MAX_JOINT_NAME - 1);
+            skel.names[e][anim::MAX_JOINT_NAME - 1] = '\0';
         }
     }
 

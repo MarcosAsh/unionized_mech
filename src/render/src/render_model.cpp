@@ -220,9 +220,13 @@ void model_queue_stretched(RenderModel& model, u32 slot, core::Vec3 pos, core::Q
 }
 
 SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch,
-                                const char* base, u32 fallback_texture, u32 max_instances) {
+                                const char* base, u32 fallback_texture, u32 max_instances,
+                                const char* attach_joint) {
     SkinnedModel model;
     model.max_instances = max_instances > 0 ? max_instances : 1;
+    if (model.max_instances > MAX_SKINNED_INSTANCES) {
+        model.max_instances = MAX_SKINNED_INSTANCES;
+    }
     model.base = model_load(gpu, scratch, base, fallback_texture);
     if (!model.base.loaded) {
         return model;
@@ -264,14 +268,19 @@ SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core
     model.skinned_verts =
         gpu.create_gpu_buffer(slices * model.vertex_count * sizeof(asset::MeshVertex), 0);
 
+    model.attach_joint = anim::joint_index(model.skeleton, attach_joint);
+    if (attach_joint != nullptr && model.attach_joint < 0) {
+        core::log_errorf("render: %s has no joint named %s, attachments will float at its origin",
+                         base, attach_joint);
+    }
+
     core::log_infof("render: %s rigged, %u joints, %u clips", base, model.skeleton.joint_count,
                     model.clip_count);
     return model;
 }
 
-void skinned_model_pose(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
-                        VkPipelineLayout layout, VkDescriptorSet bindless, u32 instance,
-                        u32 clip_a, u32 clip_b, f32 blend, f32 time, u32 slot) {
+void skinned_model_animate(SkinnedModel& model, u32 instance, u32 clip_a, u32 clip_b, f32 blend,
+                           f32 time, u32 slot) {
     if (!model.base.loaded || model.clip_count == 0 || model.matrices_mapped == nullptr ||
         instance >= model.max_instances) {
         return;
@@ -301,6 +310,25 @@ void skinned_model_pose(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pip
     // Skinning matrices land straight in this instance's mapped slice.
     anim::skinning_matrices(model.skeleton, world,
                             model.matrices_mapped + slice * anim::MAX_JOINTS);
+    if (model.attach_joint >= 0) {
+        model.attach_world[instance] = world[model.attach_joint];
+    }
+}
+
+core::Mat4 skinned_model_attach(const SkinnedModel& model, u32 instance) {
+    if (model.attach_joint < 0 || instance >= model.max_instances) {
+        return core::Mat4{};
+    }
+    return model.attach_world[instance];
+}
+
+void skinned_model_skin(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
+                        VkPipelineLayout layout, VkDescriptorSet bindless, u32 instance,
+                        u32 slot) {
+    if (!model.base.loaded || model.clip_count == 0 || instance >= model.max_instances) {
+        return;
+    }
+    const u32 slice = slot * model.max_instances + instance;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &bindless, 0,

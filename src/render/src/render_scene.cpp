@@ -39,6 +39,13 @@ constexpr f32 WALLRUN_VM_SHIFT = 0.05f;
 /// and the viewmodel all arrive together.
 constexpr f32 LEAN_EASE = 0.2f;
 
+/// Where a shot appears to leave a body, from the fire-time eye: right of
+/// centre, below the eyeline, and out in front of the chest. Roughly where the
+/// hands hold the weapon, which is what these have to agree with.
+constexpr f32 MUZZLE_RIGHT = 0.20f;
+constexpr f32 MUZZLE_DOWN = 0.22f;
+constexpr f32 MUZZLE_FORWARD = 0.35f;
+
 /// Which side of a character a nearby wall is on: positive to their left,
 /// negative to their right, tapering to zero as they turn to face it head on.
 /// Every wall lean comes through here, so the camera, the bodies, and the
@@ -153,6 +160,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // command buffers from whatever the frustum keeps.
     model_begin(models_->duck);
     model_begin(models_->gun);
+    model_begin(models_->bot_gun);
     model_begin(models_->viewmodel);
     model_begin(models_->trooper.base);
     model_begin(models_->mech);
@@ -237,9 +245,35 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         const core::Quat rot =
             core::Quat::from_axis_half(facing, std::sin(bank_half), std::cos(bank_half)) * yaw_rot;
         if (rigged) {
+            // Pose before queueing: the weapon hangs off a joint, so the joint
+            // has to have moved before anything can be placed on it.
+            skinned_model_animate(models_->trooper, i, pose.clip_a, pose.clip_b, pose.blend,
+                                  pose.time, frame.slot);
             skinned_model_queue(models_->trooper, frame.slot, i,
                                 core::Vec3{other.x, other.y, other.z}, rot, TROOPER_RIG.scale,
                                 TEAM_TINTS[other.team & 1]);
+
+            // The weapon takes its place from the hand and its aim from the
+            // character. A hand rolling through the run cycle would otherwise
+            // swing the barrel well off the shot the sim actually fired, and
+            // the tracer leaves along the aim.
+            if (other.alive != 0) {
+                const core::Vec3 hand_local =
+                    skinned_model_attach(models_->trooper, i).transform_point(core::Vec3{}) *
+                    TROOPER_RIG.scale;
+                const f32 gun_yaw = other.yaw * 0.5f;
+                const f32 gun_pitch = other.pitch * 0.5f;
+                const core::Quat gun_rot =
+                    core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(gun_yaw),
+                                               std::cos(gun_yaw)) *
+                    core::Quat::from_axis_half(core::Vec3{1.0f, 0.0f, 0.0f}, std::sin(gun_pitch),
+                                               std::cos(gun_pitch));
+                const core::Vec3 hand =
+                    core::Vec3{other.x, other.y, other.z} + rot.rotate(hand_local);
+                model_queue(models_->bot_gun, frame.slot,
+                            hand + gun_rot.rotate(core::Vec3{0.0f, 0.0f, -TROOPER_RIG.gun_forward}),
+                            gun_rot, TROOPER_RIG.gun_scale);
+            }
         } else {
             model_queue_tinted(models_->trooper.base, frame.slot,
                                core::Vec3{other.x, other.y, other.z}, rot, 1.0f,
@@ -270,7 +304,16 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
             const core::Vec3 end{0.0f, 0.0f, -(impact - eye).length()};
             queue_beam(models_->tracer_vm, frame.slot, muzzle, end - muzzle, fade);
         } else {
-            const core::Vec3 origin{shooter.shot_x, shooter.shot_y, shooter.shot_z};
+            // Out of the weapon, not out of the eye. The sim traces from the
+            // eye like any hitscan shooter, but a beam drawn from there leaves
+            // a bot's face. Offset in the frozen fire-time frame so the beam
+            // stays put for its two frames instead of dragging along behind a
+            // bot who has since run on.
+            const core::Vec3 eye{shooter.shot_x, shooter.shot_y, shooter.shot_z};
+            const core::Vec3 right{std::cos(shooter.shot_yaw), 0.0f, std::sin(shooter.shot_yaw)};
+            const core::Vec3 origin = eye + right * MUZZLE_RIGHT +
+                                      core::Vec3{0.0f, -MUZZLE_DOWN, 0.0f} +
+                                      shot_dir * MUZZLE_FORWARD;
             queue_beam(models_->tracer, frame.slot, origin, impact - origin, fade);
         }
     }
@@ -352,12 +395,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.cam_pos[2] = cam_z;
     globals.cam_pos[3] = 0.0f;
 
-    const RenderModel* fill_models[9] = {&models_->duck,         &models_->gun,
-                                         &models_->viewmodel,    &models_->trooper.base,
-                                         &models_->mech,         &models_->tracer,
-                                         &models_->tracer_vm,    &models_->hitmarker,
-                                         &models_->overlay};
-    for (u32 i = 0; i < 9; ++i) {
+    const RenderModel* fill_models[10] = {&models_->duck,      &models_->gun,
+                                          &models_->viewmodel, &models_->trooper.base,
+                                          &models_->bot_gun,   &models_->mech,
+                                          &models_->tracer,    &models_->tracer_vm,
+                                          &models_->hitmarker, &models_->overlay};
+    for (u32 i = 0; i < 10; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -390,6 +433,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->trooper.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                planes, frame.slot, PASS_CAMERA);
+    model_cull(models_->bot_gun, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
+               frame.slot, PASS_CAMERA);
     model_cull(models_->mech, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot, PASS_CAMERA);
     model_cull(models_->tracer, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
@@ -405,13 +450,14 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot, PASS_SHADOW);
     model_cull(models_->trooper.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
+    model_cull(models_->bot_gun, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               accept_all, frame.slot, PASS_SHADOW);
     model_cull(models_->mech, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
     for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
         if (poses[i].posed) {
-            skinned_model_pose(models_->trooper, frame.cmd, skin_pipeline_, skin_layout_,
-                               bindless_set_, i, poses[i].clip_a, poses[i].clip_b,
-                               poses[i].blend, poses[i].time, frame.slot);
+            skinned_model_skin(models_->trooper, frame.cmd, skin_pipeline_, skin_layout_,
+                               bindless_set_, i, frame.slot);
         }
     }
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -547,6 +593,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                             &bindless_set_, 0, nullptr);
     const u32 globals_idx = models_->globals.bindless_index;
     model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, globals_idx, frame.slot);
+    model_draw_culled(models_->bot_gun, frame.cmd, mesh_layout_, view_proj, globals_idx,
+                      frame.slot);
     model_draw_culled(models_->trooper.base, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->mech, frame.cmd, mesh_layout_, view_proj, globals_idx,

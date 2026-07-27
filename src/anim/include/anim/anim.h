@@ -20,6 +20,12 @@ constexpr u32 MAX_CLIPS = 32;
 /// Upper bound on joints per skeleton. Game rigs run 30 to 90; 128 leaves room.
 constexpr u32 MAX_JOINTS = 128;
 
+/// Longest joint name kept from the source rig, terminator included. Anything
+/// hung off a rig names the joint it hangs from, so the names have to survive
+/// import: the importer reorders joints parent-before-child, which means a
+/// remembered index points somewhere else the moment the rig changes.
+constexpr u32 MAX_JOINT_NAME = 32;
+
 /// A skeleton: joint hierarchy, bind-pose inverse matrices, and the rest pose.
 /// # Invariants
 /// Joints are stored parent-before-child, so hierarchy walks are a single
@@ -37,7 +43,11 @@ struct Skeleton {
     core::Vec3 rest_pos[MAX_JOINTS];
     core::Quat rest_rot[MAX_JOINTS];
     core::Vec3 rest_scale[MAX_JOINTS];
+    char names[MAX_JOINTS][MAX_JOINT_NAME] = {};  ///< Source rig names, truncated.
 };
+
+/// The index of the joint called `name`, or -1 when there is no such joint.
+[[nodiscard]] i32 joint_index(const Skeleton& skeleton, const char* name);
 
 /// One animated property of one joint: sorted key times and packed values,
 /// three floats per key for translation and scale, four for rotation.

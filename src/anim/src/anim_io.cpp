@@ -71,7 +71,8 @@ core::Result<core::Unit, const char*> skeleton_save(const char* path, const Skel
     using SaveResult = core::Result<core::Unit, const char*>;
 
     const u32 n = skeleton.joint_count;
-    const u64 total = sizeof(SkelHeader) + n * (sizeof(i16) + 16 * 4 + 3 * 4 + 4 * 4 + 3 * 4);
+    const u64 total =
+        sizeof(SkelHeader) + n * (sizeof(i16) + 16 * 4 + 3 * 4 + 4 * 4 + 3 * 4 + MAX_JOINT_NAME);
     core::Arena scratch = core::Arena::with_capacity(total + 64);
     const core::Span<u8> bytes = scratch.alloc_n<u8>(total);
 
@@ -91,6 +92,8 @@ core::Result<core::Unit, const char*> skeleton_save(const char* path, const Skel
     std::memcpy(cursor, skeleton.rest_rot, n * sizeof(core::Quat));
     cursor += n * sizeof(core::Quat);
     std::memcpy(cursor, skeleton.rest_scale, n * sizeof(core::Vec3));
+    cursor += n * sizeof(core::Vec3);
+    std::memcpy(cursor, skeleton.names, n * MAX_JOINT_NAME);
 
     core::Result<core::Unit, const char*> written =
         core::write_entire_file(path, core::Span<const u8>(bytes.data(), bytes.size()));
@@ -117,7 +120,8 @@ core::Result<Skeleton, const char*> skeleton_load(core::Arena& arena, const char
         return LoadResult::err("not a native skeleton");
     }
     const u32 n = header.joint_count;
-    const u64 expected = sizeof(SkelHeader) + n * (sizeof(i16) + 16 * 4 + 3 * 4 + 4 * 4 + 3 * 4);
+    const u64 expected =
+        sizeof(SkelHeader) + n * (sizeof(i16) + 16 * 4 + 3 * 4 + 4 * 4 + 3 * 4 + MAX_JOINT_NAME);
     if (bytes.size() != expected) {
         return LoadResult::err("skeleton length does not match header");
     }
@@ -137,6 +141,8 @@ core::Result<Skeleton, const char*> skeleton_load(core::Arena& arena, const char
     std::memcpy(out.rest_rot, cursor, n * sizeof(core::Quat));
     cursor += n * sizeof(core::Quat);
     std::memcpy(out.rest_scale, cursor, n * sizeof(core::Vec3));
+    cursor += n * sizeof(core::Vec3);
+    std::memcpy(out.names, cursor, n * MAX_JOINT_NAME);
     return LoadResult::ok(out);
 }
 

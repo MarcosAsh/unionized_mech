@@ -15,6 +15,7 @@ namespace render {
 struct SceneModels {
     RenderModel duck;
     RenderModel gun;
+    RenderModel bot_gun;  ///< The same weapon in world space, held by bots.
     RenderModel viewmodel;
     SkinnedModel trooper;
     RenderModel mech;

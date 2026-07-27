@@ -1,6 +1,7 @@
 // Round-trip tests for the native asset formats, and glTF import. Checks are
 // plain ASSERTs.
 
+#include "anim/anim.h"
 #include "asset/asset.h"
 #include "core/arena.h"
 #include "core/assert.h"
@@ -160,6 +161,10 @@ static void test_gltf_rig_import() {
     ASSERT(model.skeleton.joint_count == 2);
     ASSERT(model.skeleton.parents[0] == -1);
     ASSERT(model.skeleton.parents[1] == 0);
+    // Engine joint order is topological, not the file's, so an attachment that
+    // remembered an index would drift. Names are what survive.
+    ASSERT(joint_index(model.skeleton, "Root") == 0);
+    ASSERT(joint_index(model.skeleton, "Tip") == 1);
     ASSERT(model.skin.size() == 3);
 
     // The armature is not a joint, so only the skeleton's root transform can

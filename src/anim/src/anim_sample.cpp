@@ -1,6 +1,20 @@
 #include "anim/anim.h"
 
+#include <cstring>
+
 namespace anim {
+
+i32 joint_index(const Skeleton& skeleton, const char* name) {
+    if (name == nullptr) {
+        return -1;
+    }
+    for (u32 j = 0; j < skeleton.joint_count; ++j) {
+        if (std::strncmp(skeleton.names[j], name, MAX_JOINT_NAME) == 0) {
+            return static_cast<i32>(j);
+        }
+    }
+    return -1;
+}
 
 namespace {
 

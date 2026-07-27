@@ -19,6 +19,10 @@ constexpr u32 MAX_MODEL_SUBMESHES = 64;
 constexpr u32 MAX_MODEL_TEXTURES = 64;
 constexpr u32 MAX_MODEL_DRAWS = 256;  // records per model per frame
 
+/// Instances one rigged model can carry. Bounds the CPU-side attachment
+/// transforms, which unlike the pose matrices are not sliced per frame.
+constexpr u32 MAX_SKINNED_INSTANCES = 16;
+
 /// Per-draw data read by the cull and vertex shaders. Layout matches the
 /// DrawRecord struct in shaders/cull.comp and shaders/mesh.vert (std430).
 struct DrawRecord {
@@ -128,6 +132,11 @@ struct SkinnedModel {
     anim::Skeleton skeleton;
     anim::Clip clips[anim::MAX_CLIPS];
     u32 clip_count = 0;
+    i32 attach_joint = -1;  ///< Joint props hang from, resolved by name at load.
+    /// Model-space transform of `attach_joint` per instance, as of that
+    /// instance's last pose. Written every frame before anything reads it, so
+    /// unlike the pose matrices it needs no per-frame slicing.
+    core::Mat4 attach_world[MAX_SKINNED_INSTANCES];
 };
 
 /// Load `<base>.umesh` and its `<base>.<i>.utex` textures onto the GPU.
@@ -144,19 +153,30 @@ struct SkinnedModel {
 
 /// Load a rigged model: model_load plus `<base>.uskel`, `<base>.uskin`, and
 /// `<base>.<i>.uclip`, with the skinning buffers created. Clip storage comes
-/// from `permanent`, which must outlive the model.
+/// from `permanent`, which must outlive the model. `attach_joint` names the
+/// joint props hang from, or is null for a rig that carries nothing.
 [[nodiscard]] SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent,
                                               core::Arena& scratch, const char* base,
-                                              u32 fallback_texture, u32 max_instances);
+                                              u32 fallback_texture, u32 max_instances,
+                                              const char* attach_joint);
 
-/// Sample a two-clip blend at `time` (blend 0 is all `clip_a`, 1 all
-/// `clip_b`) into `instance`'s slice, write its skinning matrices, and record
-/// the skinning dispatch. Call in the compute phase, before rendering begins.
-/// Equal clip indices or an extreme blend degenerate to a single sample, so
-/// this is also the single-clip path.
-void skinned_model_pose(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
-                        VkPipelineLayout layout, VkDescriptorSet bindless, u32 instance,
-                        u32 clip_a, u32 clip_b, f32 blend, f32 time, u32 slot);
+/// Sample a two-clip blend at `time` (blend 0 is all `clip_a`, 1 all `clip_b`)
+/// into `instance`'s slice and write its skinning matrices and attachment
+/// transform. Equal clip indices or an extreme blend degenerate to a single
+/// sample, so this is also the single-clip path. Call in the queue phase:
+/// whatever hangs off the rig has to know where the joint went before it can
+/// queue itself.
+void skinned_model_animate(SkinnedModel& model, u32 instance, u32 clip_a, u32 clip_b, f32 blend,
+                           f32 time, u32 slot);
+
+/// Record the skinning dispatch for an instance posed by skinned_model_animate.
+/// Call in the compute phase, before rendering begins.
+void skinned_model_skin(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
+                        VkPipelineLayout layout, VkDescriptorSet bindless, u32 instance, u32 slot);
+
+/// Model-space transform of `instance`'s attachment joint, as of its last
+/// skinned_model_animate. Identity when the rig has no attachment joint.
+[[nodiscard]] core::Mat4 skinned_model_attach(const SkinnedModel& model, u32 instance);
 
 /// Queue `instance` of the skinned model, drawing the pose its slice holds.
 void skinned_model_queue(SkinnedModel& model, u32 slot, u32 instance, core::Vec3 pos,
