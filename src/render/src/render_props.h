@@ -31,7 +31,11 @@ struct TrooperRig {
     f32 yaw_offset;  ///< Added to sim yaw to meet the model's forward axis.
     u32 clip_death;
     u32 clip_idle;
-    u32 clip_run;
+    /// The four locomotion clips, in the order the movement angle sweeps them:
+    /// forward, right, back, left. A character aims where it looks and moves
+    /// where it is going, and those are rarely the same direction, so running
+    /// is chosen by the angle between them rather than by speed alone.
+    u32 clip_run[4];
     const char* gun_joint;  ///< Joint the weapon hangs from, by name.
     f32 gun_scale;          ///< Weapon model scaled to a carbine in world units.
     f32 gun_forward;        ///< Metres along the aim from the hand to the grip.
@@ -39,11 +43,12 @@ struct TrooperRig {
 
 /// Quaternius SWAT: authored in metres at 1.82 tall so it needs almost no
 /// scaling, facing +Z against our yaw-zero-faces-minus-Z convention. Clips are
-/// alphabetical, which is why Run sits at 16 of 24. The weapon hangs off the
-/// right wrist, positioned by the rig but aimed by the character rather than by
-/// the hand, so a hand that rolls through its run cycle cannot swing the barrel
-/// off the shot the sim actually fired.
-constexpr TrooperRig TROOPER_RIG = {0.99f, 3.14159265f, 0, 4, 16, "Wrist.R", 0.7f, 0.15f};
+/// alphabetical, which is why Run sits at 16 of 24 and its Back, Left and Right
+/// variants follow it. The weapon hangs off the right wrist, positioned by the
+/// rig but aimed by the character rather than by the hand, so a hand that rolls
+/// through its run cycle cannot swing the barrel off the shot the sim fired.
+constexpr TrooperRig TROOPER_RIG = {0.99f, 3.14159265f, 0,     4,      {16, 19, 17, 18},
+                                    "Wrist.R", 0.7f,    0.15f};
 
 /// Decorative duck placements on the plaza.
 struct DuckSpot {

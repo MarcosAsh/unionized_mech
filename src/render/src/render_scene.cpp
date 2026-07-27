@@ -39,6 +39,11 @@ constexpr f32 WALLRUN_VM_SHIFT = 0.05f;
 /// and the viewmodel all arrive together.
 constexpr f32 LEAN_EASE = 0.2f;
 
+/// Speed at which a body is fully running rather than easing out of its idle.
+/// Below the sim's flat-out run so that a bot at a walk is already committed to
+/// a stride instead of sliding along in a half-blend.
+constexpr f32 RUN_BLEND_SPEED = 5.0f;
+
 /// Where a shot appears to leave a body, from the fire-time eye: right of
 /// centre, below the eyeline, and out in front of the chest. Roughly where the
 /// hands hold the weapon, which is what these have to agree with.
@@ -194,7 +199,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // its own skinning slice: alive bots blend idle into run by speed, and a
     // fresh corpse plays the death clip once and freezes on its last frame.
     const f32 anim_time = static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
-    const bool rigged = models_->trooper.clip_count > TROOPER_RIG.clip_run;
+    u32 highest_clip = TROOPER_RIG.clip_idle;
+    for (u32 c = 0; c < 4; ++c) {
+        highest_clip = TROOPER_RIG.clip_run[c] > highest_clip ? TROOPER_RIG.clip_run[c]
+                                                              : highest_clip;
+    }
+    const bool rigged = models_->trooper.clip_count > highest_clip;
     struct TrooperPose {
         u32 clip_a;
         u32 clip_b;
@@ -219,14 +229,32 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
             pose = TrooperPose{TROOPER_RIG.clip_death, TROOPER_RIG.clip_death, 0.0f,
                                dead_for < death_end ? dead_for : death_end, true};
         } else {
-            const f32 hspeed =
-                std::sqrt(other.vx * other.vx + other.vz * other.vz);
-            f32 run_blend = hspeed / 6.0f;
-            if (run_blend > 1.0f) {
-                run_blend = 1.0f;
+            // Locomotion by the angle between where they are going and where
+            // they are looking. A bot walking a route while tracking a target
+            // is almost never doing both in the same direction, and playing the
+            // forward run regardless is what makes them moonwalk.
+            const f32 hspeed = std::sqrt(other.vx * other.vx + other.vz * other.vz);
+            const f32 forward = other.vx * std::sin(other.yaw) - other.vz * std::cos(other.yaw);
+            const f32 rightward = other.vx * std::cos(other.yaw) + other.vz * std::sin(other.yaw);
+            // Zero velocity gives atan2(0, 0) = 0, which is the forward clip,
+            // and at a standstill the idle blend has taken over anyway.
+            f32 sector = std::atan2(rightward, forward) * (2.0f / 3.14159265f);
+            if (sector < 0.0f) {
+                sector += 4.0f;  // -2..2 turns into 0..4 clip slots
             }
-            pose = TrooperPose{TROOPER_RIG.clip_idle, TROOPER_RIG.clip_run, run_blend,
-                               anim_time + static_cast<f32>(i) * 0.37f, true};
+            const u32 dir = static_cast<u32>(sector);
+            const f32 between = sector - static_cast<f32>(dir);
+
+            const f32 time = anim_time + static_cast<f32>(i) * 0.37f;
+            if (hspeed < RUN_BLEND_SPEED) {
+                // Standing to running, on the direction they are heading.
+                pose = TrooperPose{TROOPER_RIG.clip_idle, TROOPER_RIG.clip_run[dir & 3],
+                                   hspeed / RUN_BLEND_SPEED, time, true};
+            } else {
+                // At speed, between the two runs either side of the heading.
+                pose = TrooperPose{TROOPER_RIG.clip_run[dir & 3],
+                                   TROOPER_RIG.clip_run[(dir + 1) & 3], between, time, true};
+            }
         }
         const f32 half = (other.yaw + TROOPER_RIG.yaw_offset) * 0.5f;
         const core::Quat yaw_rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
