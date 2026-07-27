@@ -17,6 +17,33 @@ u64 fnv1a(u64 h, const void* data, u64 n) {
 
 }  // namespace
 
+InputCmd scripted_input(u32 tick) {
+    InputCmd c{};
+    c.tick = TickId{tick};
+    c.move_x = static_cast<i8>((tick % 4 < 2) ? 1 : -1);
+    c.move_y = static_cast<i8>((tick % 8 < 4) ? 1 : 0);
+    c.look_dx = static_cast<i16>(static_cast<i32>(tick % 16) - 8);
+    c.look_dy = static_cast<i16>(static_cast<i32>((tick / 2) % 8) - 4);
+    u16 buttons = 0;
+    if (tick % 30u == 0u) {
+        buttons |= static_cast<u16>(Button::Jump);
+    }
+    if (tick % 53u < 21u) {
+        buttons |= static_cast<u16>(Button::Crouch);  // slides while carrying speed
+    }
+    if (tick % 67u < 17u) {
+        buttons |= static_cast<u16>(Button::Aim);  // drops the sprint to a walk
+    }
+    if (tick % 97u < 11u) {
+        buttons |= static_cast<u16>(Button::Fire);
+    }
+    if (tick % 149u < 5u) {
+        buttons |= static_cast<u16>(Button::Reload);
+    }
+    c.buttons = buttons;
+    return c;
+}
+
 void init_match(World& world) {
     world = World{};
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
@@ -28,6 +55,7 @@ void init_match(World& world) {
         c.y = spawn.y;
         c.z = spawn.z;
         c.yaw = spawn.yaw;
+        rearm(c);
     }
 }
 
@@ -38,13 +66,11 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
     // Bot inputs derive from the previous world, deterministically, through
     // the same InputCmd the player and, later, the network use.
     InputCmd cmds[MAX_PLAYERS];
-    bool fired[MAX_PLAYERS];
     cmds[0] = cmd;
     for (u32 i = 1; i < MAX_PLAYERS; ++i) {
         cmds[i] = bot_think(prev, i);
     }
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
-        fired[i] = button_down(cmds[i].buttons, Button::Fire);
         if (next.chars[i].alive != 0 && next.chars[i].merged == 0) {
             step_character(next.chars[i], prev.chars[i], cmds[i]);
         }
@@ -65,7 +91,7 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         }
         return;
     }
-    resolve_combat(next, fired);
+    resolve_combat(next, cmds);
     for (u32 team = 0; team < 2; ++team) {
         if (team_kills(next, team) >= WIN_KILLS) {
             next.winner = static_cast<u8>(team + 1);

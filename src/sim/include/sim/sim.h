@@ -106,6 +106,9 @@ struct Character {
     u16 wallrun_ticks = 0;   ///< Ticks spent on the current wall.
     u16 respawn_ticks = 0;   ///< Ticks until respawn while dead.
     u16 kills = 0;
+    u16 reload_ticks = 0;    ///< Ticks left in a reload, 0 when not reloading.
+    u16 ammo = 0;            ///< Rounds in the magazine.
+    u16 reserve = 0;         ///< Rounds carried spare.
     i16 health = 100;
     MoveState state = MoveState::Air;
     u8 team = 0;           ///< 0 or 1.
@@ -122,10 +125,12 @@ struct Character {
     u8 hurt_age = 255;     ///< Ticks since this character was last damaged.
     u8 merged = 0;         ///< 1 while this robot's processes run the mech.
     u8 use_was_down = 0;   ///< Use button state last tick, for edge detection.
+    u8 weapon = 0;         ///< Index into the weapon table; 0 is the carbine.
+    u8 reload_was_down = 0;  ///< Reload button last tick, for edge detection.
     u8 pad0 = 0;
 };
 
-static_assert(sizeof(Character) == 92, "Character layout must stay packed for hashing");
+static_assert(sizeof(Character) == 100, "Character layout must stay packed for hashing");
 
 /// The whole simulation state: the match. Trivially copyable so it can be
 /// snapshotted and hashed by value. Slot 0 is the player; bot inputs are
@@ -245,6 +250,15 @@ void simulate(const World& prev, const InputCmd& cmd, World& next);
 
 /// A team's total kills.
 [[nodiscard]] u32 team_kills(const World& w, u32 team);
+
+/// The determinism harness's input sequence for `tick`, built from integer
+/// arithmetic only so it is identical on every platform. The button schedules
+/// are coprime, so a run drifts through combinations rather than repeating one
+/// narrow path: a sequence that only ran forward and jumped would not notice
+/// determinism breaking in the crouch, slide, aim, or firing paths. It lives
+/// here rather than in the harness so the tool and its tests cannot drift onto
+/// different sequences and quietly stop testing the same thing.
+[[nodiscard]] InputCmd scripted_input(u32 tick);
 
 /// Write an input tape: the exact InputCmd sequence of a run, replayable for
 /// the determinism harness and, later, for server-side verification.

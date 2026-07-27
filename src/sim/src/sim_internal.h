@@ -23,6 +23,37 @@ constexpr u16 RESPAWN_TICKS = 180;        // three seconds
     return c.ducked != 0 ? 0.9f : 1.7f;
 }
 
+/// One weapon's tuning, held as data. Adding a gun is a row in the table in
+/// sim_combat.cpp rather than another branch through the firing code, and the
+/// chassis cannon is a row like any other instead of a special case.
+struct Weapon {
+    f32 near_dist;            ///< Metres of full damage.
+    f32 far_dist;             ///< Metres before the last step down.
+    f32 range;                ///< How far the ray reaches at all.
+    i16 damage_near;          ///< Damage inside near_dist.
+    i16 damage_far;           ///< Damage past near_dist.
+    i16 damage_very_far;      ///< Damage past far_dist.
+    u16 reload_ticks;         ///< Reload with a round still chambered.
+    u16 reload_empty_ticks;   ///< Reload from dry, which takes longer.
+    u16 mag;                  ///< Rounds per magazine. 0 means it never runs out.
+    u16 reserve;              ///< Spare rounds carried at spawn.
+    u16 cooldown_ticks;       ///< Ticks between shots.
+};
+
+constexpr u8 WEAPON_CARBINE = 0;
+constexpr u8 WEAPON_CHASSIS = 1;
+
+/// The weapon `index` names, clamped to the table.
+[[nodiscard]] const Weapon& weapon_def(u8 index);
+
+/// The weapon a character is actually holding: merging swaps the carbine for
+/// the chassis cannon without disturbing the stowed weapon index.
+[[nodiscard]] const Weapon& held_weapon(const Character& c);
+
+/// Fill a character's magazine and reserve from its weapon. Used at match start
+/// and on every respawn, so nobody comes back dry.
+void rearm(Character& c);
+
 /// Advance one character by one tick of movement from `cmd`. Pure: reads
 /// `prev_c`, writes `c` (already copied from prev).
 void step_character(Character& c, const Character& prev_c, const InputCmd& cmd);
@@ -31,9 +62,8 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd);
 /// Deterministic: all randomness derives from the world seed and tick.
 [[nodiscard]] InputCmd bot_think(const World& prev, u32 index);
 
-/// Resolve this tick's shots, damage, deaths, and respawns. `fired[i]` is
-/// whether character i pressed fire this tick.
-void resolve_combat(World& next, const bool fired[MAX_PLAYERS]);
+/// Resolve this tick's shots, reloads, damage, deaths, and respawns.
+void resolve_combat(World& next, const InputCmd cmds[MAX_PLAYERS]);
 
 /// Merge and eject transitions, mech movement under its pilot, and the
 /// destroyed-chassis rebuild countdown. Runs after the characters step.

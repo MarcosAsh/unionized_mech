@@ -10,23 +10,12 @@
 
 using namespace sim;
 
-// Same deterministic sequence the headless runner uses.
-static InputCmd scripted(u32 i) {
-    InputCmd c{};
-    c.tick = TickId{i};
-    c.move_x = static_cast<i8>((i % 4 < 2) ? 1 : -1);
-    c.move_y = static_cast<i8>((i % 8 < 4) ? 1 : 0);
-    c.look_dx = static_cast<i16>(static_cast<i32>(i % 16) - 8);
-    c.look_dy = static_cast<i16>(static_cast<i32>((i / 2) % 8) - 4);
-    c.buttons = (i % 30u == 0u) ? static_cast<u16>(Button::Jump) : static_cast<u16>(0);
-    return c;
-}
-
 static void run(u32 n, u64* hashes) {
     World w{};
+    init_match(w);  // the same starting state the headless runner uses
     for (u32 i = 0; i < n; ++i) {
         World next{};
-        simulate(w, scripted(i), next);
+        simulate(w, scripted_input(i), next);
         w = next;
         hashes[i] = hash(w);
     }
@@ -49,7 +38,7 @@ static void test_simulate_is_pure() {
     World w{};
     w.chars[0].x = 3.0f;
     w.chars[0].vx = 1.0f;
-    const InputCmd cmd = scripted(7);
+    const InputCmd cmd = scripted_input(7);
 
     World a{};
     World b{};
@@ -64,7 +53,7 @@ static void test_simulate_is_pure() {
 static void test_tick_advances() {
     World w{};
     World next{};
-    simulate(w, scripted(0), next);
+    simulate(w, scripted_input(0), next);
     ASSERT(next.tick == TickId{1});
 }
 
@@ -226,7 +215,7 @@ static void test_tape_round_trip() {
 
     const core::Span<InputCmd> cmds = arena.alloc_n<InputCmd>(N);
     for (u32 i = 0; i < N; ++i) {
-        cmds[i] = scripted(i);
+        cmds[i] = scripted_input(i);
     }
     const core::Span<const InputCmd> view(cmds.data(), cmds.size());
 
@@ -254,6 +243,7 @@ static void test_tape_round_trip() {
 // hitscan chain proven mechanically.
 static void test_hitscan_kills() {
     World w{};
+    init_match(w);  // a real match state, so everyone starts armed
     // Only two characters matter: the shooter at the origin aiming -Z, and an
     // enemy 10m ahead. Everyone else is parked far away and on the shooter's
     // team so they neither block nor participate.
@@ -328,6 +318,7 @@ static void test_hitscan_kills() {
 // which once pointed every bot away from its target.
 static void test_bot_fights_back() {
     World w{};
+    init_match(w);  // a real match state, so the bot starts armed
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
         w.chars[i].x = 500.0f;
         w.chars[i].z = 500.0f;
@@ -356,6 +347,7 @@ static void test_bot_fights_back() {
 // and survive the chassis being shot out from underneath by an enemy bot.
 static void test_union_mech() {
     World w{};
+    init_match(w);  // a real match state, so everyone starts armed
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
         w.chars[i].x = 500.0f;
         w.chars[i].z = 500.0f;
@@ -416,6 +408,7 @@ static void test_union_mech() {
 // Driving the chassis over an enemy robot crushes it and credits the pilot.
 static void test_mech_crush() {
     World w{};
+    init_match(w);  // a real match state, so everyone starts armed
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
         w.chars[i].x = 500.0f;
         w.chars[i].z = 500.0f;

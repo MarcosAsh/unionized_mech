@@ -6,24 +6,27 @@ namespace sim {
 
 namespace {
 
-// The pilot carbine. Aimed fire is a zero-width ray, which is what the hitscan
-// below already models, so only the cadence and the falloff bands are tuning.
-constexpr i16 SHOT_DAMAGE = 25;           // full damage, inside the near band
-constexpr i16 SHOT_DAMAGE_FAR = 17;       // past the near band
-constexpr i16 SHOT_DAMAGE_VERY_FAR = 12;  // past the far band
-constexpr f32 SHOT_NEAR_DIST = 38.10f;    // metres of full damage
-constexpr f32 SHOT_FAR_DIST = 50.80f;     // metres before the last step down
-constexpr u8 FIRE_COOLDOWN_TICKS = 4;     // 900 rounds per minute at 60Hz
-constexpr f32 SHOT_RANGE = 200.0f;
+// The weapon table. Distances in metres, everything else in ticks at 60Hz.
+// Aimed fire is a zero-width ray, which is what the hitscan below already
+// models, so cadence, falloff, and ammunition are the whole of the tuning.
+const Weapon WEAPONS[] = {
+    // Carbine. The pilot's rifle: fast, four rounds to a kill up close.
+    //  near   far     range   dmg near/far/vfar  reload  empty  mag  spare  cd
+    {38.10f, 50.80f, 200.0f, 25, 17, 12, 132, 175, 24, 240, 4},
+    // Chassis cannon. Slow and heavy, flat damage at any range, never dry.
+    {200.0f, 200.0f, 200.0f, 60, 60, 60, 0, 0, 0, 0, 18},
+};
 
-/// What a pilot shot lands at `dist` metres. Stepped rather than interpolated:
-/// the weapon is defined as three bands, and reading a curve between them would
-/// invent precision the design does not have.
-[[nodiscard]] i16 shot_damage(f32 dist) {
-    if (dist <= SHOT_NEAR_DIST) {
-        return SHOT_DAMAGE;
+constexpr u8 WEAPON_COUNT = static_cast<u8>(sizeof(WEAPONS) / sizeof(WEAPONS[0]));
+
+/// What `w` lands at `dist` metres. Stepped rather than interpolated: a weapon
+/// is defined as three bands, and reading a curve between them would invent
+/// precision the design does not have.
+[[nodiscard]] i16 shot_damage(const Weapon& w, f32 dist) {
+    if (dist <= w.near_dist) {
+        return w.damage_near;
     }
-    return dist <= SHOT_FAR_DIST ? SHOT_DAMAGE_FAR : SHOT_DAMAGE_VERY_FAR;
+    return dist <= w.far_dist ? w.damage_far : w.damage_very_far;
 }
 
 // Ray versus box, the slab test. Returns the entry distance through `t` when
@@ -78,6 +81,21 @@ Aabb character_hull(const Character& c) {
 
 }  // namespace
 
+const Weapon& weapon_def(u8 index) {
+    return WEAPONS[index < WEAPON_COUNT ? index : 0];
+}
+
+const Weapon& held_weapon(const Character& c) {
+    return c.merged != 0 ? WEAPONS[WEAPON_CHASSIS] : weapon_def(c.weapon);
+}
+
+void rearm(Character& c) {
+    const Weapon& w = weapon_def(c.weapon);
+    c.ammo = w.mag;
+    c.reserve = w.reserve;
+    c.reload_ticks = 0;
+}
+
 bool segment_clear(f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz) {
     const f32 dx = bx - ax;
     const f32 dy = by - ay;
@@ -96,17 +114,46 @@ bool segment_clear(f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz) {
     return true;
 }
 
-void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
+void resolve_combat(World& next, const InputCmd cmds[MAX_PLAYERS]) {
     // Shots resolve against the post-move state, in slot order, which keeps
     // the outcome deterministic and fair enough at 60Hz.
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
         Character& shooter = next.chars[i];
-        if (!fired[i] || shooter.alive == 0 || shooter.fire_cooldown > 0) {
+        const Weapon& weapon = held_weapon(shooter);
+        const bool wants_fire = button_down(cmds[i].buttons, Button::Fire);
+        const bool reload_down = button_down(cmds[i].buttons, Button::Reload);
+        const bool reload_pressed = reload_down && shooter.reload_was_down == 0;
+        shooter.reload_was_down = reload_down ? 1 : 0;
+
+        // Ammunition, for weapons that carry any. A reload runs on its own
+        // clock and blocks firing until it lands.
+        if (weapon.mag > 0 && shooter.alive != 0) {
+            if (shooter.reload_ticks > 0) {
+                shooter.reload_ticks -= 1;
+                if (shooter.reload_ticks == 0) {
+                    const u16 room = static_cast<u16>(weapon.mag - shooter.ammo);
+                    const u16 taken = room < shooter.reserve ? room : shooter.reserve;
+                    shooter.ammo = static_cast<u16>(shooter.ammo + taken);
+                    shooter.reserve = static_cast<u16>(shooter.reserve - taken);
+                }
+            } else if (shooter.reserve > 0 && shooter.ammo < weapon.mag &&
+                       (reload_pressed || (wants_fire && shooter.ammo == 0))) {
+                // Asked for, or forced by pulling the trigger on an empty
+                // magazine. Bots never press reload, so the second case is what
+                // keeps them shooting.
+                shooter.reload_ticks =
+                    shooter.ammo == 0 ? weapon.reload_empty_ticks : weapon.reload_ticks;
+            }
+        }
+
+        if (!wants_fire || shooter.alive == 0 || shooter.fire_cooldown > 0 ||
+            shooter.reload_ticks > 0 || (weapon.mag > 0 && shooter.ammo == 0)) {
             continue;
         }
-        // A merged robot fires the chassis cannon: slower, far heavier.
-        const bool mech_gun = shooter.merged != 0;
-        shooter.fire_cooldown = mech_gun ? 18 : FIRE_COOLDOWN_TICKS;
+        if (weapon.mag > 0) {
+            shooter.ammo -= 1;
+        }
+        shooter.fire_cooldown = static_cast<u8>(weapon.cooldown_ticks);
 
         const f32 cp = sim_cos(shooter.pitch);
         const f32 dx = sim_sin(shooter.yaw) * cp;
@@ -117,7 +164,7 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         const f32 oz = shooter.z;
 
         // The wall the shot stops at.
-        f32 best_t = SHOT_RANGE;
+        f32 best_t = weapon.range;
         const core::Span<const Aabb> boxes = level_boxes();
         f32 t = 0.0f;
         for (u64 b = 0; b < boxes.size(); ++b) {
@@ -148,9 +195,9 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         shooter.shot_age = 0;
         shooter.shot_hit = hit >= 0 ? 1 : 0;
         if (hit >= 0) {
-            // The chassis cannon hits for a flat heavy figure; the carbine
-            // falls off with the distance the ray just travelled.
-            const i16 damage = mech_gun ? 60 : shot_damage(best_t);
+            // Damage falls off with the distance the ray just travelled; a
+            // weapon with equal bands, like the cannon, simply reads flat.
+            const i16 damage = shot_damage(weapon, best_t);
             Character& target = next.chars[hit];
             target.hurt_age = 0;
             if (target.merged != 0) {
@@ -194,6 +241,7 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         c.y = spawn.y;
         c.z = spawn.z;
         c.yaw = spawn.yaw;
+        rearm(c);  // nobody comes back from a respawn holding an empty gun
     }
 }
 
