@@ -99,6 +99,24 @@ bool import_skeleton(const cgltf_data* data, SkinImport* out) {
             skel.rest_scale[e] = core::Vec3{node->scale[0], node->scale[1], node->scale[2]};
         }
     }
+
+    // Keep the transform of the node the rig hangs from. Exporters routinely
+    // park a skeleton under an armature node holding the conversion from
+    // authoring units and axes to metres and Y-up, and that node is not a
+    // joint, so reading the joint hierarchy alone silently drops it. One rig
+    // this way is authored in centimetres under a 100x armature: without this
+    // the character imports two centimetres tall and lying on its face.
+    for (u32 g = 0; g < n; ++g) {
+        if (skel.parents[out->gltf_to_engine[g]] >= 0) {
+            continue;
+        }
+        const cgltf_node* above = skin->joints[g]->parent;
+        if (above != nullptr) {
+            cgltf_node_transform_world(above, skel.root_transform.m);
+        }
+        break;
+    }
+
     out->has = true;
     return true;
 }

@@ -125,14 +125,10 @@ void model_begin(RenderModel& model) { model.queued = 0; }
 
 namespace {
 
-/// Smallest half-extent, in model units, a padded cull box may have. Sized to
-/// cover a human-scale character whose bind-pose bounds are degenerate.
-constexpr f32 MIN_ANIMATED_PAD = 1.5f;
-
-// Shared record writer. `bounds_pad` widens the cull box, which skinned models
-// need because animation moves vertices beyond the bind-pose bounds.
+// Shared record writer. The submesh boxes are already the space the model
+// occupies, animation included: the importer sweeps a rigged model's clips.
 void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, core::Vec3 scale,
-                   u32 vbuf, u32 vertex_base, f32 bounds_pad, const f32* tint) {
+                   u32 vbuf, u32 vertex_base, const f32* tint) {
     if (!model.loaded) {
         return;
     }
@@ -154,17 +150,8 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
             rec.color[c] = tint != nullptr ? sub.color[c] * tint[c] : sub.color[c];
         }
         for (u32 c = 0; c < 3; ++c) {
-            // A fully skinned mesh imports with a near-zero bind-pose box, since
-            // its vertices only take their real positions once the joints are
-            // applied. Scaling that by a fraction leaves it near-zero and the
-            // model gets frustum culled from almost everywhere, so padded boxes
-            // also get an absolute floor.
-            f32 pad = bounds_pad * (sub.bounds_max[c] - sub.bounds_min[c]);
-            if (bounds_pad > 0.0f && pad < MIN_ANIMATED_PAD) {
-                pad = MIN_ANIMATED_PAD;
-            }
-            rec.bounds_min[c] = sub.bounds_min[c] - pad;
-            rec.bounds_max[c] = sub.bounds_max[c] + pad;
+            rec.bounds_min[c] = sub.bounds_min[c];
+            rec.bounds_max[c] = sub.bounds_max[c];
         }
         rec.bounds_min[3] = 1.0f;
         rec.bounds_max[3] = 1.0f;
@@ -184,13 +171,13 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
 
 void model_queue(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale) {
     queue_records(model, slot, pos, rot, core::Vec3{scale, scale, scale},
-                  model.vertices.bindless_index, 0, 0.0f, nullptr);
+                  model.vertices.bindless_index, 0, nullptr);
 }
 
 void model_queue_tinted(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale,
                         const f32 tint[4]) {
     queue_records(model, slot, pos, rot, core::Vec3{scale, scale, scale},
-                  model.vertices.bindless_index, 0, 0.0f, tint);
+                  model.vertices.bindless_index, 0, tint);
 }
 
 void model_queue_glyph(RenderModel& model, u32 slot, core::Vec3 pos, core::Vec3 scale,
@@ -229,7 +216,7 @@ void model_queue_glyph(RenderModel& model, u32 slot, core::Vec3 pos, core::Vec3 
 
 void model_queue_stretched(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
                            core::Vec3 scale, const f32 tint[4]) {
-    queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, 0.0f, tint);
+    queue_records(model, slot, pos, rot, scale, model.vertices.bindless_index, 0, tint);
 }
 
 SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch,
@@ -337,7 +324,7 @@ void skinned_model_queue(SkinnedModel& model, u32 slot, u32 instance, core::Vec3
     }
     queue_records(model.base, slot, pos, rot, core::Vec3{scale, scale, scale},
                   model.skinned_verts.bindless_index,
-                  (slot * model.max_instances + instance) * model.vertex_count, 0.5f, tint);
+                  (slot * model.max_instances + instance) * model.vertex_count, tint);
 }
 
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,

@@ -104,19 +104,26 @@ int main(int argc, char** argv) {
                         static_cast<unsigned long long>(model.clips.size()));
     }
 
-    core::Vec3 lo = model.mesh.vertices[0].pos;
-    core::Vec3 hi = lo;
-    for (u64 i = 1; i < model.mesh.vertices.size(); ++i) {
-        const core::Vec3 p = model.mesh.vertices[i].pos;
-        lo.x = p.x < lo.x ? p.x : lo.x;
-        lo.y = p.y < lo.y ? p.y : lo.y;
-        lo.z = p.z < lo.z ? p.z : lo.z;
-        hi.x = p.x > hi.x ? p.x : hi.x;
-        hi.y = p.y > hi.y ? p.y : hi.y;
-        hi.z = p.z > hi.z ? p.z : hi.z;
+    // The union of the submesh boxes, which for a rigged model is the space its
+    // animations sweep rather than its bind pose. That is the size it draws at,
+    // so it is the number to size a hull or a spawn clearance against.
+    const bool rigged = model.skeleton.joint_count > 0;
+    core::Vec3 lo{model.mesh.submeshes[0].bounds_min[0], model.mesh.submeshes[0].bounds_min[1],
+                  model.mesh.submeshes[0].bounds_min[2]};
+    core::Vec3 hi{model.mesh.submeshes[0].bounds_max[0], model.mesh.submeshes[0].bounds_max[1],
+                  model.mesh.submeshes[0].bounds_max[2]};
+    for (u64 i = 1; i < model.mesh.submeshes.size(); ++i) {
+        const asset::Submesh& sub = model.mesh.submeshes[i];
+        lo.x = sub.bounds_min[0] < lo.x ? sub.bounds_min[0] : lo.x;
+        lo.y = sub.bounds_min[1] < lo.y ? sub.bounds_min[1] : lo.y;
+        lo.z = sub.bounds_min[2] < lo.z ? sub.bounds_min[2] : lo.z;
+        hi.x = sub.bounds_max[0] > hi.x ? sub.bounds_max[0] : hi.x;
+        hi.y = sub.bounds_max[1] > hi.y ? sub.bounds_max[1] : hi.y;
+        hi.z = sub.bounds_max[2] > hi.z ? sub.bounds_max[2] : hi.z;
     }
-    core::log_infof("um_import: bounds min (%.2f, %.2f, %.2f) max (%.2f, %.2f, %.2f)",
-                    static_cast<f64>(lo.x), static_cast<f64>(lo.y), static_cast<f64>(lo.z),
-                    static_cast<f64>(hi.x), static_cast<f64>(hi.y), static_cast<f64>(hi.z));
+    core::log_infof("um_import: %s bounds min (%.2f, %.2f, %.2f) max (%.2f, %.2f, %.2f)",
+                    rigged ? "posed" : "mesh", static_cast<f64>(lo.x), static_cast<f64>(lo.y),
+                    static_cast<f64>(lo.z), static_cast<f64>(hi.x), static_cast<f64>(hi.y),
+                    static_cast<f64>(hi.z));
     return 0;
 }

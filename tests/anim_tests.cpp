@@ -95,6 +95,29 @@ static void test_hierarchy_and_skinning() {
     ASSERT(near_v(skin[1].transform_point(p), p + Vec3{5.0f, 0.0f, 0.0f}));
 }
 
+static void test_root_transform() {
+    // What a rig authored under a scaled armature needs: the node above the
+    // root joint is not a joint, so nothing in the hierarchy or the pose holds
+    // its transform.
+    Skeleton skel = two_joint_skeleton();
+    skel.root_transform = Mat4::scale(Vec3{100.0f, 100.0f, 100.0f});
+
+    Pose pose;
+    rest_pose(skel, &pose);
+    Mat4 world[MAX_JOINTS];
+    pose_matrices(skel, pose, world);
+    // Roots stand on it and children inherit it through them.
+    ASSERT(near_v(world[0].transform_point(Vec3{}), Vec3{}));
+    ASSERT(near_v(world[1].transform_point(Vec3{}), Vec3{0.0f, 100.0f, 0.0f}));
+
+    // It has to survive posing: animation overwrites a root joint's local
+    // transform every frame, so folding the armature into the rest pose loses
+    // it the moment a clip plays.
+    pose.pos[0] = Vec3{1.0f, 0.0f, 0.0f};
+    pose_matrices(skel, pose, world);
+    ASSERT(near_v(world[1].transform_point(Vec3{}), Vec3{100.0f, 100.0f, 0.0f}));
+}
+
 static void test_blend() {
     Pose a;
     Pose b;
@@ -116,7 +139,8 @@ static void test_blend() {
 
 static void test_round_trips() {
     core::Arena arena = core::Arena::with_capacity(1u << 20);
-    const Skeleton skel = two_joint_skeleton();
+    Skeleton skel = two_joint_skeleton();
+    skel.root_transform = Mat4::scale(Vec3{2.0f, 2.0f, 2.0f});
 
     ASSERT(skeleton_save("anim_tests_skel.tmp", skel).is_ok());
     core::Result<Skeleton, const char*> skel_back = skeleton_load(arena, "anim_tests_skel.tmp");
@@ -124,6 +148,7 @@ static void test_round_trips() {
     ASSERT(skel_back.value().joint_count == 2);
     ASSERT(skel_back.value().parents[1] == 0);
     ASSERT(near_v(skel_back.value().rest_pos[1], Vec3{0.0f, 1.0f, 0.0f}));
+    ASSERT(skel_back.value().root_transform == Mat4::scale(Vec3{2.0f, 2.0f, 2.0f}));
 
     const f32 times[2] = {0.0f, 1.0f};
     const f32 tvals[6] = {0.0f, 0.0f, 0.0f, 1.0f, 2.0f, 3.0f};
@@ -153,6 +178,7 @@ static void test_round_trips() {
 int main() {
     test_sampling();
     test_hierarchy_and_skinning();
+    test_root_transform();
     test_blend();
     test_round_trips();
     core::log_info("anim_tests: all passed");

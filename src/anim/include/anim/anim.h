@@ -27,6 +27,12 @@ constexpr u32 MAX_JOINTS = 128;
 struct Skeleton {
     u32 joint_count = 0;
     i16 parents[MAX_JOINTS] = {};
+    /// The transform of whatever sits above the root joints. Rigs are commonly
+    /// authored under an armature node that carries the scale and orientation
+    /// putting the mesh in world units, and that node is not itself a joint, so
+    /// the hierarchy alone loses it. It cannot be folded into the root joints'
+    /// rest transforms either: animation overwrites those every frame.
+    core::Mat4 root_transform;
     core::Mat4 inverse_bind[MAX_JOINTS];
     core::Vec3 rest_pos[MAX_JOINTS];
     core::Quat rest_rot[MAX_JOINTS];

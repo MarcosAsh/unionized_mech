@@ -102,10 +102,11 @@ void pose_matrices(const Skeleton& skeleton, const Pose& pose, core::Mat4* out_w
     for (u32 j = 0; j < skeleton.joint_count; ++j) {
         core::Mat4 local = core::Mat4::trs(pose.pos[j], pose.rot[j]);
         local = local * core::Mat4::scale(pose.scale[j]);
-        // Parents precede children, so the parent's world matrix is ready.
+        // Parents precede children, so the parent's world matrix is ready. A
+        // root joint stands on the transform the rig hangs from instead.
         out_world[j] = skeleton.parents[j] >= 0
                            ? out_world[skeleton.parents[j]] * local
-                           : local;
+                           : skeleton.root_transform * local;
     }
 }
 

@@ -153,7 +153,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         model_queue_tinted(models_->mech, frame.slot, core::Vec3{mech.x, mech.y, mech.z},
                            mech_rot, 1.0f, mech_tint);
     }
-    // The robot model is 4.5 units tall facing +Z; scale it into the 1.8m
+    // The character model poses out at 1.82m facing +Z; scale it into the 1.8m
     // hull and flip it to our yaw-zero-faces-minus-Z convention. Each bot gets
     // its own skinning slice: alive bots blend idle into run by speed, and a
     // fresh corpse plays the death clip once and freezes on its last frame.

@@ -14,6 +14,7 @@ constexpr u32 CLIP_MAGIC = 0x4C434D55u;  // "UMCL" little-endian
 struct SkelHeader {
     u32 magic;
     u32 joint_count;
+    f32 root_transform[16];
 };
 
 struct ClipHeader {
@@ -74,7 +75,8 @@ core::Result<core::Unit, const char*> skeleton_save(const char* path, const Skel
     core::Arena scratch = core::Arena::with_capacity(total + 64);
     const core::Span<u8> bytes = scratch.alloc_n<u8>(total);
 
-    SkelHeader header{SKEL_MAGIC, n};
+    SkelHeader header{SKEL_MAGIC, n, {}};
+    std::memcpy(header.root_transform, skeleton.root_transform.m, sizeof(header.root_transform));
     u8* cursor = bytes.data();
     std::memcpy(cursor, &header, sizeof(header));
     cursor += sizeof(header);
@@ -122,6 +124,7 @@ core::Result<Skeleton, const char*> skeleton_load(core::Arena& arena, const char
 
     Skeleton out;
     out.joint_count = n;
+    std::memcpy(out.root_transform.m, header.root_transform, sizeof(header.root_transform));
     const u8* cursor = bytes.data() + sizeof(header);
     std::memcpy(out.parents, cursor, n * sizeof(i16));
     cursor += n * sizeof(i16);
