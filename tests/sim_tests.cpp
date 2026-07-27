@@ -482,6 +482,25 @@ static void test_step_over_kerb() {
     ASSERT(max_vy == 0.0f);
 }
 
+// Every waypoint in the shipping map has to be reachable from both team spawns.
+// Bots path by waypoint, so a wall dropped between two nodes silently strands
+// them somewhere they cannot route out of. Level geometry changes land here.
+static void test_map_nav_fully_connected() {
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    ASSERT(load_level(arena, MAP_PATH).is_ok());
+    const u32 nodes = nav_count();
+    ASSERT(nodes > 0);
+    for (u32 team = 0; team < 2; ++team) {
+        const Spawn start = team_spawn(team, 0);
+        for (u32 goal = 0; goal < nodes; ++goal) {
+            f32 hx = 0.0f;
+            f32 hy = 0.0f;
+            f32 hz = 0.0f;
+            ASSERT(nav_next_hop(start.x, start.y, start.z, goal, &hx, &hy, &hz));
+        }
+    }
+}
+
 int main() {
     // Every movement test below runs against the shipping level, so geometry
     // the game plays and geometry the tests assert on cannot drift apart. The
@@ -503,6 +522,7 @@ int main() {
     test_map_round_trip();
     test_nav_pathing();
     test_step_over_kerb();
+    test_map_nav_fully_connected();
     core::log_info("sim_tests: all passed");
     return 0;
 }
