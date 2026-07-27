@@ -425,6 +425,7 @@ static void test_mech_crush() {
     w.chars[0].z = 0.0f;
     w.chars[1].x = 0.0f;
     w.chars[1].z = -5.0f;  // in the mech's path
+    w.chars[1].yaw = 3.14159265f;  // facing the mech: it charges rather than flees
     w.chars[1].team = 1;
 
     InputCmd use{};
