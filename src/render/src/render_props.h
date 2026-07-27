@@ -21,6 +21,22 @@ struct LevelVertex {
     f32 uv[4];  ///< xy are the texture coordinates; zw pad the stride.
 };
 
+/// Everything the renderer assumes about the imported character art: how big it
+/// is, which way it faces, and which animation clip is which. All of it belongs
+/// to the specific asset, so swapping the model is an edit here and nowhere
+/// else. Clips are indexed by integer in the file's own order.
+struct TrooperRig {
+    f32 scale;       ///< Model units scaled into the sim's 1.8m hull.
+    f32 yaw_offset;  ///< Added to sim yaw to meet the model's forward axis.
+    u32 clip_death;
+    u32 clip_idle;
+    u32 clip_run;
+};
+
+/// The Quaternius Animated Robot: 4.5 units tall, facing +Z against our
+/// yaw-zero-faces-minus-Z convention, 14 clips.
+constexpr TrooperRig TROOPER_RIG = {0.4f, 3.14159265f, 1, 2, 6};
+
 /// Decorative duck placements on the plaza.
 struct DuckSpot {
     core::Vec3 pos;

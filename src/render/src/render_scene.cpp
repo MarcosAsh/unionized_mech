@@ -152,13 +152,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // hull and flip it to our yaw-zero-faces-minus-Z convention. Each bot gets
     // its own skinning slice: alive bots blend idle into run by speed, and a
     // fresh corpse plays the death clip once and freezes on its last frame.
-    constexpr f32 TROOPER_SCALE = 0.4f;
-    constexpr f32 PI = 3.14159265f;
-    constexpr u32 CLIP_DEATH = 1;
-    constexpr u32 CLIP_IDLE = 2;
-    constexpr u32 CLIP_RUN = 6;
     const f32 anim_time = static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
-    const bool rigged = models_->trooper.clip_count > CLIP_RUN;
+    const bool rigged = models_->trooper.clip_count > TROOPER_RIG.clip_run;
     struct TrooperPose {
         u32 clip_a;
         u32 clip_b;
@@ -179,8 +174,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
             if (dead_for > 1.6f || !rigged) {
                 continue;
             }
-            const f32 death_end = models_->trooper.clips[CLIP_DEATH].duration - 0.001f;
-            pose = TrooperPose{CLIP_DEATH, CLIP_DEATH, 0.0f,
+            const f32 death_end = models_->trooper.clips[TROOPER_RIG.clip_death].duration - 0.001f;
+            pose = TrooperPose{TROOPER_RIG.clip_death, TROOPER_RIG.clip_death, 0.0f,
                                dead_for < death_end ? dead_for : death_end, true};
         } else {
             const f32 hspeed =
@@ -189,15 +184,15 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
             if (run_blend > 1.0f) {
                 run_blend = 1.0f;
             }
-            pose = TrooperPose{CLIP_IDLE, CLIP_RUN, run_blend,
+            pose = TrooperPose{TROOPER_RIG.clip_idle, TROOPER_RIG.clip_run, run_blend,
                                anim_time + static_cast<f32>(i) * 0.37f, true};
         }
-        const f32 half = (other.yaw + PI) * 0.5f;
+        const f32 half = (other.yaw + TROOPER_RIG.yaw_offset) * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
                                                           std::sin(half), std::cos(half));
         if (rigged) {
             skinned_model_queue(models_->trooper, frame.slot, i,
-                                core::Vec3{other.x, other.y, other.z}, rot, TROOPER_SCALE,
+                                core::Vec3{other.x, other.y, other.z}, rot, TROOPER_RIG.scale,
                                 TEAM_TINTS[other.team & 1]);
         } else {
             model_queue_tinted(models_->trooper.base, frame.slot,
@@ -393,12 +388,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                 if (other.alive == 0) {
                     continue;
                 }
-                const f32 half = (other.yaw + PI) * 0.5f;
+                const f32 half = (other.yaw + TROOPER_RIG.yaw_offset) * 0.5f;
                 const core::Quat rot = core::Quat::from_axis_half(
                     core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(half), std::cos(half));
                 core::Mat4 world = core::Mat4::trs(core::Vec3{other.x, other.y, other.z}, rot);
                 world = world * core::Mat4::scale(
-                                    core::Vec3{TROOPER_SCALE, TROOPER_SCALE, TROOPER_SCALE});
+                                    core::Vec3{TROOPER_RIG.scale, TROOPER_RIG.scale, TROOPER_RIG.scale});
                 instances[instance_count++] =
                     make_rt_instance(world, models_->trooper_blas.address);
             }
