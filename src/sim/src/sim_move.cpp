@@ -13,6 +13,8 @@ constexpr f32 LOOK_SCALE = 0.0025f;    // radians per mouse count
 constexpr f32 PITCH_LIMIT = 1.55334f;  // just under pi/2
 constexpr f32 GRAVITY = 15.0f;          // sv_gravity 750 x gravityscale 0.80
 constexpr f32 JUMP_VELOCITY = 6.76f;    // jumpheight 60u: sqrt(2 * G * 1.524m)
+constexpr f32 WALK_SPEED = 4.41f;       // stand speed 173.5 u/s, what aiming costs you
+constexpr f32 CROUCH_SPEED = 2.03f;     // crouch speed 80 u/s
 constexpr f32 GROUND_ACCEL = 10.0f;    // how fast ground speed is gained
 constexpr f32 AIR_ACCEL = 12.0f;       // air control strength
 constexpr f32 AIR_MAX_SPEED = 1.5f;    // capped air wish speed enables airstrafe
@@ -30,6 +32,10 @@ constexpr u8 MAX_AIR_JUMPS = 1;  // one extra jump in the air
 // Forgiveness. These raise the floor without touching the ceiling.
 constexpr u8 COYOTE_TICKS = 6;       // jump still works ~100ms after a ledge
 constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landing
+
+// Steps. Anything this low is walked straight over, no vault and no hop, so
+// kerbs and stair treads do not launch you.
+constexpr f32 STEP_HEIGHT = 0.457f;  // stepheight 18u
 
 // Mantle. Moving into a ledge at chest height vaults it, keeping momentum.
 constexpr f32 MANTLE_REACH = 1.3f;   // highest ledge that can be vaulted
@@ -53,6 +59,18 @@ constexpr u16 WALLRUN_MAX_TICKS = 105;      // wallrun_timeLimit 1.75s
 constexpr u16 WALLRUN_GRAVITY_RAMP = 42;    // wallrun_gravityRampUpTime 0.7s
 constexpr f32 WALLJUMP_UP = 5.84f;          // wallrunJumpUpSpeed 230 u/s
 constexpr f32 WALLJUMP_PUSH = 5.21f;        // wallrunJumpOutwardSpeed 205 u/s
+constexpr f32 WALLJUMP_INPUT = 2.03f;       // wallrunJumpInputDirSpeed 80 u/s
+
+/// True when a hull of `height` at (x, y, z) is inside any of `boxes`. Used to
+/// check there is room before stepping up onto something.
+[[nodiscard]] bool hull_blocked(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes) {
+    for (u64 i = 0; i < boxes.size(); ++i) {
+        if (hull_overlaps(x, y, z, height, boxes[i])) {
+            return true;
+        }
+    }
+    return false;
+}
 
 }  // namespace
 
@@ -94,6 +112,7 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
 
     const bool grounded = prev_c.on_ground != 0;
     const bool ducked = button_down(cmd.buttons, Button::Crouch);
+    const bool aiming = button_down(cmd.buttons, Button::Aim);
     const f32 hull_h = ducked ? DUCK_HEIGHT : HULL_HEIGHT;
     const bool jump_down = button_down(cmd.buttons, Button::Jump);
     const bool jump_pressed = jump_down && prev_c.jump_was_down == 0;
@@ -143,7 +162,9 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
             wish_speed = SLIDE_STEER_SPEED;
             accel = SLIDE_STEER_ACCEL;
         } else if (grounded) {
-            wish_speed = RUN_SPEED;
+            // Crouching walks; aiming down the sights costs you the sprint and
+            // leaves you at a walk, so committing to a shot commits your feet.
+            wish_speed = ducked ? CROUCH_SPEED : (aiming ? WALK_SPEED : RUN_SPEED);
             accel = GROUND_ACCEL;
         } else {
             wish_speed = AIR_MAX_SPEED;
@@ -245,9 +266,11 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     } else if (wallrunning) {
         c.air_jumps = MAX_AIR_JUMPS;
         if (jump_pressed) {
+            // Off the wall, plus whatever the stick is asking for, so a wall
+            // jump can be aimed instead of only ever throwing you straight out.
             c.vy = WALLJUMP_UP;
-            c.vx += wall_nx * WALLJUMP_PUSH;
-            c.vz += wall_nz * WALLJUMP_PUSH;
+            c.vx += wall_nx * WALLJUMP_PUSH + wish_x * WALLJUMP_INPUT;
+            c.vz += wall_nz * WALLJUMP_PUSH + wish_z * WALLJUMP_INPUT;
             jump_buffer = 0;
         }
     } else if (climbing) {
@@ -277,6 +300,14 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         const Aabb& b = boxes[i];
         if (hull_overlaps(c.x, c.y, c.z, hull_h, b)) {
             const f32 ledge = b.max_y - c.y;
+            // A low step is walked straight over, keeping speed, so long as
+            // there is room to stand up there. Taller ledges fall through to
+            // the mantle vault below.
+            if (grounded && ledge > 0.0f && ledge <= STEP_HEIGHT &&
+                !hull_blocked(c.x, b.max_y, c.z, hull_h, boxes)) {
+                c.y = b.max_y;
+                continue;
+            }
             c.x = c.vx > 0.0f ? b.min_x - HULL_HALF_WIDTH : b.max_x + HULL_HALF_WIDTH;
             if (ledge > 0.0f && ledge <= MANTLE_REACH) {
                 const f32 needed = sim_sqrt(2.0f * GRAVITY * ledge) + MANTLE_MARGIN;
@@ -294,6 +325,11 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         const Aabb& b = boxes[i];
         if (hull_overlaps(c.x, c.y, c.z, hull_h, b)) {
             const f32 ledge = b.max_y - c.y;
+            if (grounded && ledge > 0.0f && ledge <= STEP_HEIGHT &&
+                !hull_blocked(c.x, b.max_y, c.z, hull_h, boxes)) {
+                c.y = b.max_y;
+                continue;
+            }
             c.z = c.vz > 0.0f ? b.min_z - HULL_HALF_WIDTH : b.max_z + HULL_HALF_WIDTH;
             if (ledge > 0.0f && ledge <= MANTLE_REACH) {
                 const f32 needed = sim_sqrt(2.0f * GRAVITY * ledge) + MANTLE_MARGIN;

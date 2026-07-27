@@ -445,6 +445,43 @@ static void test_mech_crush() {
     ASSERT(cur.player().kills >= 1);
 }
 
+// A kerb no taller than a step is walked straight over. Topping out proves the
+// step-up ran at all; vy never going positive proves it was a step and not the
+// mantle vault, which would have launched the character at 3.5 m/s instead.
+static void test_step_over_kerb() {
+    const char* step_map =
+        "spawn 0 0 0 0\n"
+        "box -4 0 -8 4 0.25 -4\n";  // a 0.25m kerb, under STEP_HEIGHT
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    const char* path = "sim_tests_step.tmp";
+    ASSERT(core::write_entire_file(path,
+                                   core::Span<const u8>(
+                                       reinterpret_cast<const u8*>(step_map),
+                                       __builtin_strlen(step_map)))
+               .is_ok());
+    ASSERT(load_level(arena, path).is_ok());
+
+    World w{};
+    bool topped = false;
+    f32 max_vy = 0.0f;
+    for (u32 i = 0; i < 180; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.move_y = 1;  // yaw 0 faces -Z, straight at the kerb
+        World next{};
+        simulate(w, c, next);
+        w = next;
+        if (w.player().vy > max_vy) {
+            max_vy = w.player().vy;
+        }
+        if (w.player().on_ground != 0 && w.player().y == 0.25f) {
+            topped = true;
+        }
+    }
+    ASSERT(topped);
+    ASSERT(max_vy == 0.0f);
+}
+
 int main() {
     test_replay_twice_identical();
     test_simulate_is_pure();
@@ -459,6 +496,7 @@ int main() {
     test_mech_crush();
     test_map_round_trip();
     test_nav_pathing();
+    test_step_over_kerb();
     core::log_info("sim_tests: all passed");
     return 0;
 }

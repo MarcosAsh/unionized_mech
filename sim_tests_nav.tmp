@@ -1,0 +1,4 @@
+spawn 0 0 0 0
+node 0 0 0
+node 14 0 0
+cbox 6 0 -8 8 6 8
