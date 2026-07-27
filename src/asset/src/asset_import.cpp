@@ -255,6 +255,32 @@ bool load_image(core::Arena& arena, const cgltf_image* image, const char* gltf_p
 
 }  // namespace
 
+core::Result<TextureData, const char*> image_import(core::Arena& arena, const char* path) {
+    using ImageResult = core::Result<TextureData, const char*>;
+    core::Result<core::Span<u8>, const char*> file = core::read_entire_file(arena, path);
+    if (file.is_err()) {
+        return ImageResult::err(file.error());
+    }
+    int w = 0;
+    int h = 0;
+    int comp = 0;
+    u8* pixels = stbi_load_from_memory(file.value().data(), static_cast<int>(file.value().size()),
+                                       &w, &h, &comp, 4);
+    if (pixels == nullptr) {
+        return ImageResult::err("image_import: not a decodable image");
+    }
+    const u64 bytes = static_cast<u64>(w) * static_cast<u64>(h) * 4u;
+    const core::Span<u8> copy = arena.alloc_n<u8>(bytes);
+    std::memcpy(copy.data(), pixels, bytes);
+    stbi_image_free(pixels);
+
+    TextureData out;
+    out.width = static_cast<u32>(w);
+    out.height = static_cast<u32>(h);
+    out.rgba = core::Span<const u8>(copy.data(), bytes);
+    return ImageResult::ok(out);
+}
+
 core::Result<Model, const char*> import_gltf(core::Arena& arena, const char* path) {
     cgltf_options options{};
     cgltf_data* data = nullptr;

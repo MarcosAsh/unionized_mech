@@ -1,7 +1,7 @@
 # Game content, downloaded pinned by hash and converted to the native formats
 # by um_import at build time. Nothing here is committed. All CC0: the Khronos
-# sample Duck, Kenney's Blaster Kit (kenney.nl), and the Quaternius Animated
-# Robot (quaternius.com, via poly.pizza).
+# sample Duck, Kenney's Blaster Kit (kenney.nl), the Quaternius Animated Robot
+# (quaternius.com, via poly.pizza), and a concrete surface from ambientCG.
 
 set(DUCK_URL
     "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Binary/Duck.glb")
@@ -38,6 +38,20 @@ if(NOT EXISTS "${ROBOT_GLB}")
     file(DOWNLOAD "${ROBOT_URL}" "${ROBOT_GLB}" EXPECTED_HASH SHA256=${ROBOT_SHA256})
 endif()
 
+# The level surface, CC0 from ambientCG. Only the colour map is wired up today;
+# the same pack carries NormalGL and Roughness for when the shading grows into
+# them, which is why a whole material set is fetched rather than one image.
+set(GROUND_URL "https://ambientcg.com/get?file=Concrete034_1K-JPG.zip")
+set(GROUND_SHA256 "5839d284d94ffb8d2a56df742ec522b13dd311c52dbd42b8fd33f0409ceedb81")
+set(GROUND_ZIP "${CMAKE_BINARY_DIR}/sample/ground.zip")
+set(GROUND_JPG "${CMAKE_BINARY_DIR}/sample/ground/Concrete034_1K-JPG_Color.jpg")
+
+if(NOT EXISTS "${GROUND_JPG}")
+    message(STATUS "Downloading sample asset: ambientCG Concrete034")
+    file(DOWNLOAD "${GROUND_URL}" "${GROUND_ZIP}" EXPECTED_HASH SHA256=${GROUND_SHA256})
+    file(ARCHIVE_EXTRACT INPUT "${GROUND_ZIP}" DESTINATION "${CMAKE_BINARY_DIR}/sample/ground")
+endif()
+
 set(ASSET_DIR "${CMAKE_BINARY_DIR}/assets")
 file(MAKE_DIRECTORY "${ASSET_DIR}")
 
@@ -59,5 +73,12 @@ add_custom_command(
     DEPENDS um_import "${ROBOT_GLB}"
     COMMENT "um_import robot"
     VERBATIM)
+add_custom_command(
+    OUTPUT "${ASSET_DIR}/ground.utex"
+    COMMAND um_import "${GROUND_JPG}" "${ASSET_DIR}/ground"
+    DEPENDS um_import "${GROUND_JPG}"
+    COMMENT "um_import ground"
+    VERBATIM)
 add_custom_target(sample_assets
-    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/blaster.umesh" "${ASSET_DIR}/robot.umesh")
+    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/blaster.umesh" "${ASSET_DIR}/robot.umesh"
+            "${ASSET_DIR}/ground.utex")

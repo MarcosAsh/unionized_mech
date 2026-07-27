@@ -102,6 +102,14 @@ struct Model {
 /// A static message when the file is missing, truncated, or not a mesh.
 [[nodiscard]] core::Result<MeshData, const char*> mesh_load(core::Arena& arena, const char* path);
 
+/// Decode a standalone PNG or JPEG file into RGBA8, backed by `arena`. The
+/// glTF path already decoded embedded images; this exposes the same thing for
+/// loose texture files so they can be converted offline like everything else.
+/// # Errors
+/// A static message when the file is missing or is not a decodable image.
+[[nodiscard]] core::Result<TextureData, const char*> image_import(core::Arena& arena,
+                                                                  const char* path);
+
 /// Write a texture in the native format read by texture_load.
 /// # Errors
 /// A static message when the file cannot be written.

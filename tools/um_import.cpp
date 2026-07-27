@@ -14,11 +14,35 @@
 
 int main(int argc, char** argv) {
     if (argc != 3) {
-        core::log_error("usage: um_import <model.gltf|.glb> <out_base>");
+        core::log_error("usage: um_import <model.gltf|.glb|image.png|.jpg> <out_base>");
         return 1;
     }
     const char* in_path = argv[1];
     const char* out_base = argv[2];
+
+    // A loose image converts straight to one texture. Keeps material art on the
+    // same download-pin-convert path as the models rather than a second one.
+    const u64 in_len = __builtin_strlen(in_path);
+    const bool is_model = in_len > 5 && (__builtin_strcmp(in_path + in_len - 5, ".gltf") == 0 ||
+                                         __builtin_strcmp(in_path + in_len - 4, ".glb") == 0);
+    if (!is_model) {
+        core::Arena image_arena = core::Arena::with_capacity(256ull << 20);
+        core::Result<asset::TextureData, const char*> img =
+            asset::image_import(image_arena, in_path);
+        if (img.is_err()) {
+            core::log_errorf("um_import: %s", img.error());
+            return 1;
+        }
+        char tex_path[512];
+        std::snprintf(tex_path, sizeof(tex_path), "%s.utex", out_base);
+        if (asset::texture_save(tex_path, img.value()).is_err()) {
+            core::log_errorf("um_import: could not write %s", tex_path);
+            return 1;
+        }
+        core::log_infof("um_import: %s -> %s (%ux%u)", in_path, tex_path, img.value().width,
+                        img.value().height);
+        return 0;
+    }
 
     core::Arena arena = core::Arena::with_capacity(1024ull << 20);
 

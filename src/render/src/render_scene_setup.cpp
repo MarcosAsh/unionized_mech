@@ -37,7 +37,7 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.shadow_image_ = gpu.shadow_image();
     scene.shadow_view_ = gpu.shadow_view();
     scene.shadow_tex_ = gpu.shadow_bindless();
-    scene.level_tex_ = make_level_texture(gpu);
+    scene.level_tex_ = make_level_texture(gpu, scratch);
     scene.bindless_layout_ = gpu.bindless_layout();
     scene.color_format_ = gpu.color_format();
     scene.depth_format_ = gpu.depth_format();

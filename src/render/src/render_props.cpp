@@ -1,5 +1,6 @@
 #include "render_props.h"
 
+#include "asset/asset.h"
 #include "sim/sim.h"
 
 #include <cmath>
@@ -145,7 +146,18 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
     }
 }
 
-u32 make_level_texture(gpu::Renderer& gpu) {
+u32 make_level_texture(gpu::Renderer& gpu, core::Arena& scratch) {
+    const u64 marker = scratch.marker();
+    core::Result<asset::TextureData, const char*> loaded =
+        asset::texture_load(scratch, ASSET_DIR "/ground.utex");
+    if (loaded.is_ok()) {
+        const asset::TextureData& tex = loaded.value();
+        const u32 slot = gpu.create_texture(tex.rgba.data(), tex.width, tex.height).bindless_index;
+        scratch.rewind(marker);
+        return slot;
+    }
+    scratch.rewind(marker);
+
     // A tiling surface: a recessed seam along two edges so tiling reads as
     // panelling, plus a fine deterministic grain so a large flat face does not
     // look like poured plastic. Generated, so nothing binary enters the build.

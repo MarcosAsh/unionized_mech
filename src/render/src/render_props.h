@@ -4,6 +4,7 @@
 // placeholder characters, and the first-person viewmodel. All render-side
 // state; nothing here touches the simulation.
 
+#include "core/arena.h"
 #include "core/array.h"
 #include "core/quat.h"
 #include "core/types.h"
@@ -54,10 +55,10 @@ constexpr DuckSpot DUCKS[3] = {
 /// per-face normals and world-scaled texture coordinates.
 void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 
-/// A tiling surface detail texture for the level pass, generated rather than
-/// loaded so the build stays free of binary content. Real material art drops
-/// into the same slot.
-[[nodiscard]] u32 make_level_texture(gpu::Renderer& gpu);
+/// The level pass surface texture. Loads the imported material if it is there
+/// and falls back to a generated pattern if it is not, so the renderer still
+/// comes up when the asset conversion has not run.
+[[nodiscard]] u32 make_level_texture(gpu::Renderer& gpu, core::Arena& scratch);
 
 /// A placeholder first-person weapon made of boxes. Establishes the viewmodel
 /// system that real arm art replaces later.
