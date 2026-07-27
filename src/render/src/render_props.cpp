@@ -50,10 +50,13 @@ void add_quad(core::Array<LevelVertex>& verts, core::Array<u32>& indices, f32 x,
     const core::Vec3 up{0.0f, 1.0f, 0.0f};
     const f32 x1 = x + cell;
     const f32 z1 = z + cell;
-    add_level_vertex(verts, {x, 0.0f, z}, rgb, up, x * LEVEL_UV_SCALE, z * LEVEL_UV_SCALE);
-    add_level_vertex(verts, {x1, 0.0f, z}, rgb, up, x1 * LEVEL_UV_SCALE, z * LEVEL_UV_SCALE);
-    add_level_vertex(verts, {x1, 0.0f, z1}, rgb, up, x1 * LEVEL_UV_SCALE, z1 * LEVEL_UV_SCALE);
-    add_level_vertex(verts, {x, 0.0f, z1}, rgb, up, x * LEVEL_UV_SCALE, z1 * LEVEL_UV_SCALE);
+    // v runs along -Z, which is cross(normal, u) for an upward face. The boxes
+    // build their faces from that same rule and the shader rebuilds the tangent
+    // frame from it, so the floor cannot be the one surface that disagrees.
+    add_level_vertex(verts, {x, 0.0f, z}, rgb, up, x * LEVEL_UV_SCALE, -z * LEVEL_UV_SCALE);
+    add_level_vertex(verts, {x1, 0.0f, z}, rgb, up, x1 * LEVEL_UV_SCALE, -z * LEVEL_UV_SCALE);
+    add_level_vertex(verts, {x1, 0.0f, z1}, rgb, up, x1 * LEVEL_UV_SCALE, -z1 * LEVEL_UV_SCALE);
+    add_level_vertex(verts, {x, 0.0f, z1}, rgb, up, x * LEVEL_UV_SCALE, -z1 * LEVEL_UV_SCALE);
     push_quad(indices, base);
 }
 
@@ -144,6 +147,24 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
         add_level_box(verts, indices, b.min_x, b.min_y, b.min_z, b.max_x, b.max_y, b.max_z, col[0],
                       col[1], col[2]);
     }
+}
+
+u32 make_level_data_texture(gpu::Renderer& gpu, core::Arena& scratch, const char* path,
+                            const u8 fallback[4]) {
+    const u64 marker = scratch.marker();
+    core::Result<asset::TextureData, const char*> loaded = asset::texture_load(scratch, path);
+    u32 slot = 0;
+    if (loaded.is_ok()) {
+        const asset::TextureData& tex = loaded.value();
+        // Linear, not sRGB: these are numbers, not colour.
+        slot = gpu.create_texture(tex.rgba.data(), tex.width, tex.height, false).bindless_index;
+    } else {
+        // One flat texel standing for "no detail here", so a missing map costs
+        // the surface its relief and nothing else.
+        slot = gpu.create_texture(fallback, 1, 1, false).bindless_index;
+    }
+    scratch.rewind(marker);
+    return slot;
 }
 
 u32 make_level_texture(gpu::Renderer& gpu, core::Arena& scratch) {

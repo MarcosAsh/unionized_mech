@@ -88,7 +88,8 @@ struct SceneGlobals {
     f32 sun_dir[4];
     u32 shadow_tex;
     u32 level_tex;
-    u32 pad[2];
+    u32 level_normal_tex;
+    u32 level_rough_tex;
     f32 sky_color[4];  ///< Drives the clear colour, the fog target, and ambient.
     f32 cam_pos[4];    ///< Eye position, for specular and fog distance.
 };

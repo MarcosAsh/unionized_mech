@@ -330,8 +330,12 @@ void Renderer::update_device_buffer(const Buffer& buffer, const void* data, u64 
     vkDestroyBuffer(dev, staging, nullptr);
 }
 
-Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {
+Texture Renderer::create_texture(const void* rgba, u32 width, u32 height, bool srgb) {
     const VkDevice dev = device_->handle();
+    // Colour maps are authored in sRGB and want the hardware decode. Normal and
+    // roughness maps are numbers that happen to be stored in an image, and
+    // decoding those bends every value on the way in.
+    const VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     const u64 byte_count = static_cast<u64>(width) * height * 4u;
 
     u32 mip_count = 1;
@@ -350,7 +354,7 @@ Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {
     VkImageCreateInfo ici{};
     ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     ici.imageType = VK_IMAGE_TYPE_2D;
-    ici.format = VK_FORMAT_R8G8B8A8_SRGB;
+    ici.format = format;
     ici.extent = {width, height, 1};
     ici.mipLevels = mip_count;
     ici.arrayLayers = 1;
@@ -458,7 +462,7 @@ Texture Renderer::create_texture(const void* rgba, u32 width, u32 height) {
     vci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     vci.image = image;
     vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    vci.format = VK_FORMAT_R8G8B8A8_SRGB;
+    vci.format = format;
     vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mip_count, 0, 1};
     VkImageView view = VK_NULL_HANDLE;
     ASSERT_MSG(vkCreateImageView(dev, &vci, nullptr, &view) == VK_SUCCESS, "texture view");

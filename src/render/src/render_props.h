@@ -67,6 +67,12 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 /// comes up when the asset conversion has not run.
 [[nodiscard]] u32 make_level_texture(gpu::Renderer& gpu, core::Arena& scratch);
 
+/// Load one of the level material's data maps as a linear texture, falling back
+/// to a single flat texel when the conversion has not run. `fallback` is the
+/// RGBA of that texel: a flat normal, or the roughness the surface should take.
+[[nodiscard]] u32 make_level_data_texture(gpu::Renderer& gpu, core::Arena& scratch,
+                                          const char* path, const u8 fallback[4]);
+
 /// A placeholder first-person weapon made of boxes. Establishes the viewmodel
 /// system that real arm art replaces later.
 [[nodiscard]] RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture);

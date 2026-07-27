@@ -84,6 +84,8 @@ private:
     VkImageView shadow_view_ = VK_NULL_HANDLE;
     u32 shadow_tex_ = 0;  ///< Bindless slot of the shadow map.
     u32 level_tex_ = 0;   ///< Bindless slot of the level surface texture.
+    u32 level_normal_tex_ = 0;  ///< Its tangent-space normal map.
+    u32 level_rough_tex_ = 0;   ///< Its roughness map.
     bool rt_ = false;     ///< Ray-query sun shadows instead of the shadow map.
     gpu::Renderer* gpu_ = nullptr;  ///< Borrowed; outlives the scene.
     i64 vert_mtime_ = 0;

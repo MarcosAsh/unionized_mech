@@ -40,13 +40,14 @@ if(NOT EXISTS "${ROBOT_GLB}")
     file(DOWNLOAD "${ROBOT_URL}" "${ROBOT_GLB}" EXPECTED_HASH SHA256=${ROBOT_SHA256})
 endif()
 
-# The level surface, CC0 from ambientCG. Only the colour map is wired up today;
-# the same pack carries NormalGL and Roughness for when the shading grows into
-# them, which is why a whole material set is fetched rather than one image.
+# The level surface, CC0 from ambientCG. Colour, normal and roughness are all
+# wired up, which is why a whole material set is fetched rather than one image.
 set(GROUND_URL "https://ambientcg.com/get?file=Concrete034_1K-JPG.zip")
 set(GROUND_SHA256 "5839d284d94ffb8d2a56df742ec522b13dd311c52dbd42b8fd33f0409ceedb81")
 set(GROUND_ZIP "${CMAKE_BINARY_DIR}/sample/ground.zip")
 set(GROUND_JPG "${CMAKE_BINARY_DIR}/sample/ground/Concrete034_1K-JPG_Color.jpg")
+set(GROUND_NORMAL_JPG "${CMAKE_BINARY_DIR}/sample/ground/Concrete034_1K-JPG_NormalGL.jpg")
+set(GROUND_ROUGH_JPG "${CMAKE_BINARY_DIR}/sample/ground/Concrete034_1K-JPG_Roughness.jpg")
 
 if(NOT EXISTS "${GROUND_JPG}")
     message(STATUS "Downloading sample asset: ambientCG Concrete034")
@@ -81,6 +82,19 @@ add_custom_command(
     DEPENDS um_import "${GROUND_JPG}"
     COMMENT "um_import ground"
     VERBATIM)
+add_custom_command(
+    OUTPUT "${ASSET_DIR}/ground_normal.utex"
+    COMMAND um_import "${GROUND_NORMAL_JPG}" "${ASSET_DIR}/ground_normal"
+    DEPENDS um_import "${GROUND_NORMAL_JPG}"
+    COMMENT "um_import ground normal"
+    VERBATIM)
+add_custom_command(
+    OUTPUT "${ASSET_DIR}/ground_rough.utex"
+    COMMAND um_import "${GROUND_ROUGH_JPG}" "${ASSET_DIR}/ground_rough"
+    DEPENDS um_import "${GROUND_ROUGH_JPG}"
+    COMMENT "um_import ground roughness"
+    VERBATIM)
 add_custom_target(sample_assets
     DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/blaster.umesh" "${ASSET_DIR}/robot.umesh"
-            "${ASSET_DIR}/ground.utex")
+            "${ASSET_DIR}/ground.utex" "${ASSET_DIR}/ground_normal.utex"
+            "${ASSET_DIR}/ground_rough.utex")

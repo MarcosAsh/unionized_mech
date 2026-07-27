@@ -386,6 +386,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
     globals.level_tex = level_tex_;
+    globals.level_normal_tex = level_normal_tex_;
+    globals.level_rough_tex = level_rough_tex_;
     globals.sky_color[0] = SKY_COLOR[0];
     globals.sky_color[1] = SKY_COLOR[1];
     globals.sky_color[2] = SKY_COLOR[2];

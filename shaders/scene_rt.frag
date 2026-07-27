@@ -57,8 +57,21 @@ void main() {
     vec2 uv = frag_uv * vec2(1.0, dims.x / dims.y);
     vec3 detail =
         texture(sampler2D(textures[nonuniformEXT(g.level_tex)], default_sampler), uv).rgb;
-    out_color = vec4(shade(g, frag_color * detail, LEVEL_METALLIC, LEVEL_ROUGHNESS,
-                           normalize(frag_normal), frag_world,
+
+    // Tangent-space relief off the same material. The frame comes from the face
+    // normal because the level is axis aligned; a mesh with arbitrary winding
+    // would have to carry real tangents.
+    vec3 face = normalize(frag_normal);
+    vec3 tangent = level_tangent(face);
+    vec3 bitangent = cross(face, tangent);
+    vec3 sampled_n =
+        texture(sampler2D(textures[nonuniformEXT(g.level_normal_tex)], default_sampler), uv).xyz *
+            2.0 - 1.0;
+    vec3 n = normalize(tangent * sampled_n.x + bitangent * sampled_n.y + face * sampled_n.z);
+    float rough =
+        texture(sampler2D(textures[nonuniformEXT(g.level_rough_tex)], default_sampler), uv).r *
+        LEVEL_ROUGHNESS;
+    out_color = vec4(shade(g, frag_color * detail, LEVEL_METALLIC, rough, n, frag_world,
                            sun_shadow_rt(g, frag_world)),
                      1.0);
 }

@@ -11,7 +11,8 @@ struct Globals {
     vec4 sun_dir;  // xyz normalized, toward the sun
     uint shadow_tex;
     uint level_tex;
-    uint pad0, pad1;
+    uint level_normal_tex;
+    uint level_rough_tex;
     vec4 sky_color;  // also the clear colour and what fog fades toward
     vec4 cam_pos;    // eye position, for specular and fog distance
 };
@@ -58,6 +59,21 @@ const float PI = 3.14159265359;
 // The level's own surface: concrete, so no metal and fairly rough.
 const float LEVEL_METALLIC = 0.0;
 const float LEVEL_ROUGHNESS = 0.85;
+
+/// The u axis the level's geometry is built along, recovered from the face
+/// normal. Every level surface is axis aligned and takes its texture
+/// coordinates from a fixed per-face axis table, so the tangent frame can be
+/// rebuilt from the normal instead of riding along on every vertex. This has to
+/// stay the same table render_props.cpp builds with.
+vec3 level_tangent(vec3 n) {
+    if (abs(n.y) > 0.5) {
+        return vec3(1.0, 0.0, 0.0);
+    }
+    if (abs(n.x) > 0.5) {
+        return vec3(0.0, 0.0, -sign(n.x));
+    }
+    return vec3(sign(n.z), 0.0, 0.0);
+}
 
 /// Trowbridge-Reitz GGX: what share of microfacets face the half vector. `a` is
 /// the squared perceptual roughness, which is what makes the roughness slider

@@ -38,6 +38,14 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.shadow_view_ = gpu.shadow_view();
     scene.shadow_tex_ = gpu.shadow_bindless();
     scene.level_tex_ = make_level_texture(gpu, scratch);
+    // A flat normal points straight out of the surface; 255 roughness leaves a
+    // missing map reading as the matte concrete it stands in for.
+    const u8 flat_normal[4] = {128, 128, 255, 255};
+    const u8 full_rough[4] = {255, 255, 255, 255};
+    scene.level_normal_tex_ =
+        make_level_data_texture(gpu, scratch, ASSET_DIR "/ground_normal.utex", flat_normal);
+    scene.level_rough_tex_ =
+        make_level_data_texture(gpu, scratch, ASSET_DIR "/ground_rough.utex", full_rough);
     scene.bindless_layout_ = gpu.bindless_layout();
     scene.color_format_ = gpu.color_format();
     scene.depth_format_ = gpu.depth_format();
