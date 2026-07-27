@@ -81,7 +81,7 @@ void step_grenades(World& next, const InputCmd cmds[MAX_PLAYERS]) {
         const bool down = button_down(cmds[i].buttons, Button::Grenade);
         const bool pressed = down && c.grenade_was_down == 0;
         c.grenade_was_down = down ? 1 : 0;
-        if (!pressed || c.alive == 0 || c.grenades == 0) {
+        if (!pressed || c.alive == 0 || c.merged != 0 || c.grenades == 0) {
             continue;
         }
         // First free slot, or nothing: a full sky drops the throw rather than

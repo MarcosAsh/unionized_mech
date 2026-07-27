@@ -115,6 +115,8 @@ void apply_damage(World& next, u32 attacker, u32 target_index, i16 damage) {
     }
 }
 
+u16 weapon_mag(const Character& c) { return held_weapon(c).mag; }
+
 void rearm(Character& c) {
     const Weapon& w = weapon_def(c.weapon);
     c.ammo = w.mag;

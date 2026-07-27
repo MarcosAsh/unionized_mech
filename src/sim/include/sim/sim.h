@@ -278,6 +278,11 @@ void simulate(const World& prev, const InputCmd& cmd, World& next);
 /// A team's total kills.
 [[nodiscard]] u32 team_kills(const World& w, u32 team);
 
+/// Magazine size of the weapon `c` is holding, or 0 when that weapon never runs
+/// dry. Presentation asks through here rather than reasoning about who is
+/// merged, so the rule for what carries ammunition lives in one place.
+[[nodiscard]] u16 weapon_mag(const Character& c);
+
 /// The determinism harness's input sequence for `tick`, built from integer
 /// arithmetic only so it is identical on every platform. The button schedules
 /// are coprime, so a run drifts through combinations rather than repeating one

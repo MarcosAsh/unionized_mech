@@ -127,6 +127,7 @@ void hud_queue(RenderModel& overlay, const Font& font, u32 slot, const sim::Worl
     constexpr f32 ORANGE[4] = {1.00f, 0.55f, 0.28f, 0.92f};
     constexpr f32 WHITE[4] = {1.00f, 1.00f, 1.00f, 0.92f};
     constexpr f32 RED[4] = {1.00f, 0.25f, 0.20f, 0.95f};
+    constexpr f32 DIM[4] = {0.72f, 0.76f, 0.82f, 0.55f};
     const sim::Character& me = world.player();
     char buf[32];
 
@@ -140,13 +141,49 @@ void hud_queue(RenderModel& overlay, const Font& font, u32 slot, const sim::Worl
     std::snprintf(buf, sizeof(buf), "%u", sim::team_kills(world, 1));
     text_queue(overlay, font, slot, 0.045f, -0.97f, sh, aspect, buf, ORANGE);
 
-    // Health bottom-left, kills bottom-right.
+    // Health bottom-left. Personal kills move up beside the team score, which
+    // leaves the bottom-right corner to the gun, where a shooter looks for it.
     std::snprintf(buf, sizeof(buf), "+%d", me.health > 0 ? me.health : 0);
     text_queue(overlay, font, slot, -0.96f, 0.87f, 0.08f, aspect, buf,
                me.health <= 25 ? RED : WHITE);
     std::snprintf(buf, sizeof(buf), "%u", static_cast<u32>(me.kills));
-    text_queue(overlay, font, slot, 0.96f - text_width(buf, 0.08f, aspect), 0.87f, 0.08f, aspect,
-               buf, WHITE);
+    text_queue(overlay, font, slot, 0.96f - text_width(buf, 0.055f, aspect), -0.965f, 0.055f,
+               aspect, buf, WHITE);
+
+    // The gun, bottom-right: magazine large, reserve small and dim beside it,
+    // so the number that matters mid-fight is the one that reads at a glance.
+    // A weapon that never runs dry, like the chassis cannon, shows nothing.
+    const u16 mag = sim::weapon_mag(me);
+    if (mag > 0 && me.alive != 0) {
+        constexpr f32 AMMO_H = 0.09f;
+        constexpr f32 SMALL_H = 0.05f;
+        std::snprintf(buf, sizeof(buf), "%u", static_cast<u32>(me.ammo));
+        const f32 ammo_w = text_width(buf, AMMO_H, aspect);
+        // Red once a quarter of the magazine is left, the point at which you
+        // want to be thinking about reloading rather than counting.
+        text_queue(overlay, font, slot, 0.96f - ammo_w, 0.87f, AMMO_H, aspect, buf,
+                   me.ammo * 4 <= mag ? RED : WHITE);
+
+        char spare[32];
+        std::snprintf(spare, sizeof(spare), "%u", static_cast<u32>(me.reserve));
+        const f32 spare_w = text_width(spare, SMALL_H, aspect);
+        text_queue(overlay, font, slot, 0.96f - ammo_w - 0.025f - spare_w, 0.91f, SMALL_H,
+                   aspect, spare, DIM);
+
+        if (me.reload_ticks > 0) {
+            const char* line = "RELOADING";
+            text_queue(overlay, font, slot, 0.96f - text_width(line, SMALL_H, aspect), 0.79f,
+                       SMALL_H, aspect, line, WHITE);
+        }
+    }
+
+    // Grenades under the health, where the chassis readout goes when merged.
+    // The two never coincide: a merged robot is not carrying them.
+    if (me.merged == 0 && me.alive != 0) {
+        std::snprintf(buf, sizeof(buf), "G %u", static_cast<u32>(me.grenades));
+        text_queue(overlay, font, slot, -0.96f, 0.76f, 0.055f, aspect, buf,
+                   me.grenades == 0 ? DIM : WHITE);
+    }
 
     // Merged: the chassis core readout. Otherwise, prompt beside the mech.
     const sim::Mech& mech = world.mech;
