@@ -293,7 +293,7 @@ private:
 
     static constexpr u32 FRAMES_IN_FLIGHT = 3;
     static constexpr u32 MAX_IMAGES = 8;
-    static constexpr u32 MAX_OWNED_BUFFERS = 64;
+    static constexpr u32 MAX_OWNED_BUFFERS = 128;
     static constexpr u32 MAX_OWNED_TEXTURES = 64;
     static constexpr u32 BINDLESS_STORAGE_COUNT = 1024;
     static constexpr u32 BINDLESS_SAMPLED_COUNT = 1024;

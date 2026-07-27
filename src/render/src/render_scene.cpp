@@ -113,7 +113,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     model_begin(models_->duck);
     model_begin(models_->gun);
     model_begin(models_->viewmodel);
-    model_begin(models_->trooper);
+    model_begin(models_->trooper.base);
     model_begin(models_->mech);
     model_begin(models_->tracer);
     model_begin(models_->tracer_vm);
@@ -141,19 +141,61 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                            mech_rot, 1.0f, mech_tint);
     }
     // The robot model is 4.5 units tall facing +Z; scale it into the 1.8m
-    // hull and flip it to our yaw-zero-faces-minus-Z convention.
+    // hull and flip it to our yaw-zero-faces-minus-Z convention. Each bot gets
+    // its own skinning slice: alive bots blend idle into run by speed, and a
+    // fresh corpse plays the death clip once and freezes on its last frame.
     constexpr f32 TROOPER_SCALE = 0.4f;
     constexpr f32 PI = 3.14159265f;
+    constexpr u32 CLIP_DEATH = 1;
+    constexpr u32 CLIP_IDLE = 2;
+    constexpr u32 CLIP_RUN = 6;
+    const f32 anim_time = static_cast<f32>(curr.tick.raw) * sim::SIM_DT + alpha * sim::SIM_DT;
+    const bool rigged = models_->trooper.clip_count > CLIP_RUN;
+    struct TrooperPose {
+        u32 clip_a;
+        u32 clip_b;
+        f32 blend;
+        f32 time;
+        bool posed;
+    };
+    TrooperPose poses[sim::MAX_PLAYERS] = {};
     for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
         const sim::Character& other = curr.chars[i];
+        if (other.merged != 0) {
+            continue;  // the body is inside the mech
+        }
+        TrooperPose& pose = poses[i];
         if (other.alive == 0) {
-            continue;
+            // Corpses show for the first while of the 180-tick respawn wait.
+            const f32 dead_for = (180.0f - static_cast<f32>(other.respawn_ticks)) * sim::SIM_DT;
+            if (dead_for > 1.6f || !rigged) {
+                continue;
+            }
+            const f32 death_end = models_->trooper.clips[CLIP_DEATH].duration - 0.001f;
+            pose = TrooperPose{CLIP_DEATH, CLIP_DEATH, 0.0f,
+                               dead_for < death_end ? dead_for : death_end, true};
+        } else {
+            const f32 hspeed =
+                std::sqrt(other.vx * other.vx + other.vz * other.vz);
+            f32 run_blend = hspeed / 6.0f;
+            if (run_blend > 1.0f) {
+                run_blend = 1.0f;
+            }
+            pose = TrooperPose{CLIP_IDLE, CLIP_RUN, run_blend,
+                               anim_time + static_cast<f32>(i) * 0.37f, true};
         }
         const f32 half = (other.yaw + PI) * 0.5f;
         const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
                                                           std::sin(half), std::cos(half));
-        model_queue_tinted(models_->trooper, frame.slot, core::Vec3{other.x, other.y, other.z},
-                           rot, TROOPER_SCALE, TEAM_TINTS[other.team & 1]);
+        if (rigged) {
+            skinned_model_queue(models_->trooper, frame.slot, i,
+                                core::Vec3{other.x, other.y, other.z}, rot, TROOPER_SCALE,
+                                TEAM_TINTS[other.team & 1]);
+        } else {
+            model_queue_tinted(models_->trooper.base, frame.slot,
+                               core::Vec3{other.x, other.y, other.z}, rot, 1.0f,
+                               TEAM_TINTS[other.team & 1]);
+        }
     }
 
     // Tracers: a bright beam along each recent shot. Bots get world-space
@@ -243,10 +285,10 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[9] = {&models_->duck,      &models_->gun,
-                                         &models_->viewmodel, &models_->trooper,
-                                         &models_->mech,      &models_->tracer,
-                                         &models_->tracer_vm, &models_->hitmarker,
+    const RenderModel* fill_models[9] = {&models_->duck,         &models_->gun,
+                                         &models_->viewmodel,    &models_->trooper.base,
+                                         &models_->mech,         &models_->tracer,
+                                         &models_->tracer_vm,    &models_->hitmarker,
                                          &models_->overlay};
     for (u32 i = 0; i < 9; ++i) {
         if (fill_models[i]->loaded) {
@@ -279,8 +321,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot, PASS_CAMERA);
     model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
-    model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
-               frame.slot, PASS_CAMERA);
+    model_cull(models_->trooper.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+               planes, frame.slot, PASS_CAMERA);
     model_cull(models_->mech, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
                frame.slot, PASS_CAMERA);
     model_cull(models_->tracer, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
@@ -294,10 +336,17 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // Shadow casters are culled permissively: the sun sees the whole map.
     model_cull(models_->duck, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
                frame.slot, PASS_SHADOW);
-    model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
+    model_cull(models_->trooper.base, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
     model_cull(models_->mech, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_SHADOW);
+    for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
+        if (poses[i].posed) {
+            skinned_model_pose(models_->trooper, frame.cmd, skin_pipeline_, skin_layout_,
+                               bindless_set_, i, poses[i].clip_a, poses[i].clip_b,
+                               poses[i].blend, poses[i].time, frame.slot);
+        }
+    }
     memory_barrier(frame.cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
@@ -363,7 +412,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     sun_in.level_indirect = indirect_.handle;
     sun_in.level_vbuf = vertices_.bindless_index;
     sun_in.casters[0] = &models_->duck;
-    sun_in.casters[1] = &models_->trooper;
+    sun_in.casters[1] = &models_->trooper.base;
     sun_in.casters[2] = &models_->mech;
     sun_in.caster_count = 3;
     sun_in.sun_view_proj = sun_view_proj;
@@ -431,7 +480,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                             &bindless_set_, 0, nullptr);
     const u32 globals_idx = models_->globals.bindless_index;
     model_draw_culled(models_->duck, frame.cmd, mesh_layout_, view_proj, globals_idx, frame.slot);
-    model_draw_culled(models_->trooper, frame.cmd, mesh_layout_, view_proj, globals_idx,
+    model_draw_culled(models_->trooper.base, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->mech, frame.cmd, mesh_layout_, view_proj, globals_idx,
                       frame.slot);

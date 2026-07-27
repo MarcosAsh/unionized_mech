@@ -221,8 +221,9 @@ void model_queue_stretched(RenderModel& model, u32 slot, core::Vec3 pos, core::Q
 }
 
 SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scratch,
-                                const char* base, u32 fallback_texture) {
+                                const char* base, u32 fallback_texture, u32 max_instances) {
     SkinnedModel model;
+    model.max_instances = max_instances > 0 ? max_instances : 1;
     model.base = model_load(gpu, scratch, base, fallback_texture);
     if (!model.base.loaded) {
         return model;
@@ -243,7 +244,7 @@ SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core
     model.vertex_count = static_cast<u32>(skin_data.size());
 
     // Clip storage lives in the permanent arena, sampled every frame.
-    for (u32 c = 0; c < 8; ++c) {
+    for (u32 c = 0; c < 16; ++c) {
         std::snprintf(path, sizeof(path), "%s.%u.uclip", base, c);
         core::Result<anim::Clip, const char*> clip = anim::clip_load(permanent, path);
         if (clip.is_err()) {
@@ -257,23 +258,26 @@ SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core
                                                 skin_data.size() * sizeof(asset::SkinVertex),
                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     void* mapped = nullptr;
-    model.matrices = gpu.create_mapped_buffer(
-        static_cast<u64>(frames) * anim::MAX_JOINTS * sizeof(core::Mat4), &mapped);
+    const u64 slices = static_cast<u64>(frames) * model.max_instances;
+    model.matrices =
+        gpu.create_mapped_buffer(slices * anim::MAX_JOINTS * sizeof(core::Mat4), &mapped);
     model.matrices_mapped = static_cast<core::Mat4*>(mapped);
-    model.skinned_verts = gpu.create_gpu_buffer(
-        static_cast<u64>(frames) * model.vertex_count * sizeof(asset::MeshVertex), 0);
+    model.skinned_verts =
+        gpu.create_gpu_buffer(slices * model.vertex_count * sizeof(asset::MeshVertex), 0);
 
     core::log_infof("render: %s rigged, %u joints, %u clips", base, model.skeleton.joint_count,
                     model.clip_count);
     return model;
 }
 
-void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
-                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip_a,
-                          u32 clip_b, f32 blend, f32 time, u32 slot) {
-    if (!model.base.loaded || model.clip_count == 0 || model.matrices_mapped == nullptr) {
+void skinned_model_pose(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
+                        VkPipelineLayout layout, VkDescriptorSet bindless, u32 instance,
+                        u32 clip_a, u32 clip_b, f32 blend, f32 time, u32 slot) {
+    if (!model.base.loaded || model.clip_count == 0 || model.matrices_mapped == nullptr ||
+        instance >= model.max_instances) {
         return;
     }
+    const u32 slice = slot * model.max_instances + instance;
     if (clip_a >= model.clip_count) {
         clip_a = model.clip_count - 1;
     }
@@ -295,9 +299,9 @@ void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline p
     }
     core::Mat4 world[anim::MAX_JOINTS];
     anim::pose_matrices(model.skeleton, pose, world);
-    // Skinning matrices land straight in this frame's mapped slice.
+    // Skinning matrices land straight in this instance's mapped slice.
     anim::skinning_matrices(model.skeleton, world,
-                            model.matrices_mapped + slot * anim::MAX_JOINTS);
+                            model.matrices_mapped + slice * anim::MAX_JOINTS);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &bindless, 0,
@@ -307,17 +311,21 @@ void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline p
     push.in_vbuf = model.base.vertices.bindless_index;
     push.skin_buf = model.skin_verts.bindless_index;
     push.matrices_buf = model.matrices.bindless_index;
-    push.matrices_base = slot * anim::MAX_JOINTS;
+    push.matrices_base = slice * anim::MAX_JOINTS;
     push.out_vbuf = model.skinned_verts.bindless_index;
-    push.out_base = slot * model.vertex_count;
+    push.out_base = slice * model.vertex_count;
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
     vkCmdDispatch(cmd, (model.vertex_count + 63) / 64, 1, 1);
 }
 
-void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
-                         f32 scale) {
+void skinned_model_queue(SkinnedModel& model, u32 slot, u32 instance, core::Vec3 pos,
+                         core::Quat rot, f32 scale, const f32 tint[4]) {
+    if (instance >= model.max_instances) {
+        return;
+    }
     queue_records(model.base, slot, pos, rot, core::Vec3{scale, scale, scale},
-                  model.skinned_verts.bindless_index, slot * model.vertex_count, 0.5f, nullptr);
+                  model.skinned_verts.bindless_index,
+                  (slot * model.max_instances + instance) * model.vertex_count, 0.5f, tint);
 }
 
 void model_cull(const RenderModel& model, VkCommandBuffer cmd, VkPipeline pipeline,

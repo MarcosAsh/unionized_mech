@@ -68,10 +68,10 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->gun =
         model_load(gpu, scratch, ASSET_DIR "/blaster", scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
-    scene.models_->trooper =
-        model_load(gpu, scratch, ASSET_DIR "/robot", scene.models_->white_texture);
-    if (!scene.models_->trooper.loaded) {
-        scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
+    scene.models_->trooper = skinned_model_load(gpu, permanent, scratch, ASSET_DIR "/robot",
+                                                scene.models_->white_texture, sim::MAX_PLAYERS);
+    if (!scene.models_->trooper.base.loaded) {
+        scene.models_->trooper.base = make_trooper(gpu, scene.models_->white_texture);
     }
     scene.models_->mech = make_mech(gpu, scene.models_->white_texture);
     scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
@@ -95,9 +95,10 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
                 scene.models_->duck.total_indices);
         }
         scene.models_->trooper_blas = gpu.create_blas(
-            scene.models_->trooper.vertices.handle, scene.models_->trooper.total_vertices,
-            sizeof(asset::MeshVertex), scene.models_->trooper.indices.handle,
-            scene.models_->trooper.total_indices);
+            scene.models_->trooper.base.vertices.handle,
+            scene.models_->trooper.base.total_vertices, sizeof(asset::MeshVertex),
+            scene.models_->trooper.base.indices.handle,
+            scene.models_->trooper.base.total_indices);
         scene.models_->mech_blas = gpu.create_blas(
             scene.models_->mech.vertices.handle, scene.models_->mech.total_vertices,
             sizeof(asset::MeshVertex), scene.models_->mech.indices.handle,

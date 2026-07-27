@@ -16,7 +16,7 @@ struct SceneModels {
     RenderModel duck;
     RenderModel gun;
     RenderModel viewmodel;
-    RenderModel trooper;
+    SkinnedModel trooper;
     RenderModel mech;
     RenderModel tracer;
     RenderModel tracer_vm;

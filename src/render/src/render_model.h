@@ -111,16 +111,19 @@ struct RenderModel {
 };
 
 /// A rigged model: the base model plus skin weights, skeleton, clips, and the
-/// per-frame skinning plumbing. Records point at the skinned output vertices.
+/// per-frame skinning plumbing. Each of `max_instances` gets its own matrix
+/// and skinned-vertex slice per frame slot, so every instance can hold a
+/// different pose. Records point at the skinned output vertices.
 struct SkinnedModel {
     RenderModel base;
     gpu::Buffer skin_verts;     ///< Static per-vertex joints and weights.
-    gpu::Buffer matrices;       ///< Mapped: frames x MAX_JOINTS skinning matrices.
-    gpu::Buffer skinned_verts;  ///< GPU-written skinned vertices, frames slices.
+    gpu::Buffer matrices;       ///< Mapped: frames x instances x MAX_JOINTS.
+    gpu::Buffer skinned_verts;  ///< GPU-written, frames x instances slices.
     core::Mat4* matrices_mapped = nullptr;
     u32 vertex_count = 0;
+    u32 max_instances = 1;
     anim::Skeleton skeleton;
-    anim::Clip clips[8];
+    anim::Clip clips[16];
     u32 clip_count = 0;
 };
 
@@ -141,19 +144,20 @@ struct SkinnedModel {
 /// from `permanent`, which must outlive the model.
 [[nodiscard]] SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent,
                                               core::Arena& scratch, const char* base,
-                                              u32 fallback_texture);
+                                              u32 fallback_texture, u32 max_instances);
 
 /// Sample a two-clip blend at `time` (blend 0 is all `clip_a`, 1 all
-/// `clip_b`), write this frame's skinning matrices, and record the skinning
-/// dispatch. Call in the compute phase, before rendering begins. Equal clip
-/// indices or an extreme blend degenerate to a single sample, so this is also
-/// the single-clip path.
-void skinned_model_update(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
-                          VkPipelineLayout layout, VkDescriptorSet bindless, u32 clip_a,
-                          u32 clip_b, f32 blend, f32 time, u32 slot);
+/// `clip_b`) into `instance`'s slice, write its skinning matrices, and record
+/// the skinning dispatch. Call in the compute phase, before rendering begins.
+/// Equal clip indices or an extreme blend degenerate to a single sample, so
+/// this is also the single-clip path.
+void skinned_model_pose(SkinnedModel& model, VkCommandBuffer cmd, VkPipeline pipeline,
+                        VkPipelineLayout layout, VkDescriptorSet bindless, u32 instance,
+                        u32 clip_a, u32 clip_b, f32 blend, f32 time, u32 slot);
 
-/// Queue one instance of the skinned model. Draws this frame's skinned slice.
-void skinned_model_queue(SkinnedModel& model, u32 slot, core::Vec3 pos, core::Quat rot, f32 scale);
+/// Queue `instance` of the skinned model, drawing the pose its slice holds.
+void skinned_model_queue(SkinnedModel& model, u32 slot, u32 instance, core::Vec3 pos,
+                         core::Quat rot, f32 scale, const f32 tint[4]);
 
 /// Start a frame: clear the model's queue for frame `slot`.
 void model_begin(RenderModel& model);
