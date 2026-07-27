@@ -16,7 +16,11 @@
 
 using namespace sim;
 
-// A deterministic input sequence built from integer arithmetic only.
+// A deterministic input sequence built from integer arithmetic only. The button
+// schedules are coprime so the run drifts through combinations rather than
+// repeating one narrow path. Coverage is the point: a harness that only ever
+// ran forward and jumped would not notice determinism breaking in the crouch,
+// slide, aim, or firing paths, which is precisely where netcode will live.
 static InputCmd scripted(u32 i) {
     InputCmd c{};
     c.tick = TickId{i};
@@ -24,7 +28,20 @@ static InputCmd scripted(u32 i) {
     c.move_y = static_cast<i8>((i % 8 < 4) ? 1 : 0);
     c.look_dx = static_cast<i16>(static_cast<i32>(i % 16) - 8);
     c.look_dy = static_cast<i16>(static_cast<i32>((i / 2) % 8) - 4);
-    c.buttons = (i % 30u == 0u) ? static_cast<u16>(Button::Jump) : static_cast<u16>(0);
+    u16 buttons = 0;
+    if (i % 30u == 0u) {
+        buttons |= static_cast<u16>(Button::Jump);
+    }
+    if (i % 53u < 21u) {
+        buttons |= static_cast<u16>(Button::Crouch);  // slides while carrying speed
+    }
+    if (i % 67u < 17u) {
+        buttons |= static_cast<u16>(Button::Aim);  // drops the sprint to a walk
+    }
+    if (i % 97u < 11u) {
+        buttons |= static_cast<u16>(Button::Fire);
+    }
+    c.buttons = buttons;
     return c;
 }
 
@@ -46,6 +63,7 @@ static u32 parse_u32(const char* s, u32 fallback) {
 
 static u64 run(core::Span<const InputCmd> cmds) {
     World w{};
+    init_match(w);  // a real 5v5 at team spawns, not ten characters at the origin
     for (u64 i = 0; i < cmds.size(); ++i) {
         World next{};
         simulate(w, cmds[i], next);
