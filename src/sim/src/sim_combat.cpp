@@ -6,9 +6,26 @@ namespace sim {
 
 namespace {
 
-constexpr i16 SHOT_DAMAGE = 25;
-constexpr u8 FIRE_COOLDOWN_TICKS = 9;   // ~400 rounds per minute
+// The pilot carbine, converted from the R-201. Its aimed cone is zero, which is
+// exactly what the hitscan below already models, so the ray needs no changes to
+// be faithful; only the cadence and the falloff bands do.
+constexpr i16 SHOT_DAMAGE = 25;           // damage_near_value
+constexpr i16 SHOT_DAMAGE_FAR = 17;       // damage_far_value
+constexpr i16 SHOT_DAMAGE_VERY_FAR = 12;  // damage_very_far_value
+constexpr f32 SHOT_NEAR_DIST = 38.10f;    // damage_near_distance 1500u
+constexpr f32 SHOT_FAR_DIST = 50.80f;     // damage_far_distance 2000u
+constexpr u8 FIRE_COOLDOWN_TICKS = 4;     // fire_rate 13.5/s; 4 ticks is 900 RPM
 constexpr f32 SHOT_RANGE = 200.0f;
+
+/// What a pilot shot lands at `dist` metres. Stepped rather than interpolated:
+/// the weapon defines three bands and reading a curve between them would invent
+/// numbers the source does not have.
+[[nodiscard]] i16 shot_damage(f32 dist) {
+    if (dist <= SHOT_NEAR_DIST) {
+        return SHOT_DAMAGE;
+    }
+    return dist <= SHOT_FAR_DIST ? SHOT_DAMAGE_FAR : SHOT_DAMAGE_VERY_FAR;
+}
 
 // Ray versus box, the slab test. Returns the entry distance through `t` when
 // the ray hits within [0, max_t].
@@ -90,7 +107,6 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         }
         // A merged robot fires the chassis cannon: slower, far heavier.
         const bool mech_gun = shooter.merged != 0;
-        const i16 damage = mech_gun ? 60 : SHOT_DAMAGE;
         shooter.fire_cooldown = mech_gun ? 18 : FIRE_COOLDOWN_TICKS;
 
         const f32 cp = sim_cos(shooter.pitch);
@@ -133,6 +149,9 @@ void resolve_combat(World& next, const bool fired[MAX_PLAYERS]) {
         shooter.shot_age = 0;
         shooter.shot_hit = hit >= 0 ? 1 : 0;
         if (hit >= 0) {
+            // The chassis cannon hits for a flat heavy figure; the carbine
+            // falls off with the distance the ray just travelled.
+            const i16 damage = mech_gun ? 60 : shot_damage(best_t);
             Character& target = next.chars[hit];
             target.hurt_age = 0;
             if (target.merged != 0) {
