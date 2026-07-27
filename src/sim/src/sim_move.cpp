@@ -11,10 +11,10 @@ namespace {
 // bit-identical on every target.
 constexpr f32 LOOK_SCALE = 0.0025f;    // radians per mouse count
 constexpr f32 PITCH_LIMIT = 1.55334f;  // just under pi/2
-constexpr f32 GRAVITY = 15.0f;          // sv_gravity 750 x gravityscale 0.80
-constexpr f32 JUMP_VELOCITY = 6.76f;    // jumpheight 60u: sqrt(2 * G * 1.524m)
-constexpr f32 WALK_SPEED = 4.41f;       // stand speed 173.5 u/s, what aiming costs you
-constexpr f32 CROUCH_SPEED = 2.03f;     // crouch speed 80 u/s
+constexpr f32 GRAVITY = 15.0f;          // downward acceleration, deliberately floaty
+constexpr f32 JUMP_VELOCITY = 6.76f;    // launch speed; the apex lands at 1.52m
+constexpr f32 WALK_SPEED = 4.41f;       // ground speed while aiming down the sights
+constexpr f32 CROUCH_SPEED = 2.03f;     // ground speed while crouched and slow
 constexpr f32 GROUND_ACCEL = 10.0f;    // how fast ground speed is gained
 constexpr f32 AIR_ACCEL = 12.0f;       // air control strength
 constexpr f32 AIR_MAX_SPEED = 1.5f;    // capped air wish speed enables airstrafe
@@ -22,7 +22,7 @@ constexpr f32 FRICTION = 6.0f;         // ground friction
 constexpr f32 STOP_SPEED = 1.5f;       // floor on friction so slow stops are crisp
 
 constexpr f32 SLIDE_MIN_SPEED = 5.0f;     // crouch above this speed becomes a slide
-constexpr f32 SLIDE_DECEL = 1.27f;        // slidedecel 50 u/s^2, replaces friction
+constexpr f32 SLIDE_DECEL = 1.27f;        // flat slide bleed, replaces friction
 constexpr f32 SLIDE_BOOST = 2.0f;         // entry burst, see the note at its use
 constexpr f32 SLIDE_STEER_SPEED = 4.0f;   // weak steering wish speed while sliding
 constexpr f32 SLIDE_STEER_ACCEL = 4.0f;   // weak steering accel while sliding
@@ -35,7 +35,7 @@ constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landin
 
 // Steps. Anything this low is walked straight over, no vault and no hop, so
 // kerbs and stair treads do not launch you.
-constexpr f32 STEP_HEIGHT = 0.457f;  // stepheight 18u
+constexpr f32 STEP_HEIGHT = 0.457f;  // tallest ledge taken without a vault
 
 // Mantle. Moving into a ledge at chest height vaults it, keeping momentum.
 constexpr f32 MANTLE_REACH = 1.3f;   // highest ledge that can be vaulted
@@ -49,17 +49,17 @@ constexpr f32 CLIMB_SPEED = 3.5f;  // upward speed while climbing
 constexpr f32 LAND_IMPACT_DECAY = 0.85f;  // per-tick decay of the landing dip
 
 // Wallrun. Speed snaps up hard and the wall lets go of you gradually, which is
-// the Titanfall signature. Numbers converted from the pilot definitions.
+// the signature this game is chasing.
 constexpr f32 WALL_PULL = 2.0f;             // gentle pull toward the wall to stay stuck
 constexpr f32 WALLRUN_MIN_SPEED = 4.0f;     // along-wall speed needed to start
-constexpr f32 WALLRUN_ACCEL = 38.1f;        // wallrunAccelerateHorizontal 1500 u/s^2
-constexpr f32 WALLRUN_MAX_SPEED = 10.7f;    // wallrunMaxSpeedHorizontal 420 u/s
+constexpr f32 WALLRUN_ACCEL = 38.1f;        // along-wall acceleration, near instant
+constexpr f32 WALLRUN_MAX_SPEED = 10.7f;    // along-wall speed ceiling
 constexpr f32 WALLRUN_MAX_FALL = 3.0f;      // cap downward speed on the wall
-constexpr u16 WALLRUN_MAX_TICKS = 105;      // wallrun_timeLimit 1.75s
-constexpr u16 WALLRUN_GRAVITY_RAMP = 42;    // wallrun_gravityRampUpTime 0.7s
-constexpr f32 WALLJUMP_UP = 5.84f;          // wallrunJumpUpSpeed 230 u/s
-constexpr f32 WALLJUMP_PUSH = 5.21f;        // wallrunJumpOutwardSpeed 205 u/s
-constexpr f32 WALLJUMP_INPUT = 2.03f;       // wallrunJumpInputDirSpeed 80 u/s
+constexpr u16 WALLRUN_MAX_TICKS = 105;      // 1.75s before the wall gives up on you
+constexpr u16 WALLRUN_GRAVITY_RAMP = 42;    // 0.7s to ease gravity back to full
+constexpr f32 WALLJUMP_UP = 5.84f;          // upward launch off the wall
+constexpr f32 WALLJUMP_PUSH = 5.21f;        // push away from the wall
+constexpr f32 WALLJUMP_INPUT = 2.03f;       // stick direction folded into the launch
 
 /// True when a hull of `height` at (x, y, z) is inside any of `boxes`. Used to
 /// check there is room before stepping up onto something.
@@ -182,11 +182,10 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         }
     }
 
-    // Slide entry burst, paid once. Titanfall has no such boost: a slide there
-    // only spends momentum you arrived with, and the speed comes back from
-    // slopes. This arena is flat, so entry pays out instead and the decel above
-    // takes it back over the length of the slide. Revisit once the level has
-    // gradients worth sliding down.
+    // Slide entry burst, paid once. A pure decay model only pays out on a
+    // gradient, and this arena is flat, so entry pays instead and the decel
+    // above takes it back over the length of the slide. Revisit once the level
+    // has slopes worth sliding down.
     if (sliding && prev_c.state != MoveState::Slide) {
         const f32 hs = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
         if (hs > 0.0f) {

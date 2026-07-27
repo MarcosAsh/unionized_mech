@@ -17,7 +17,6 @@ namespace {
 constexpr f32 BASE_FOV = 1.2217f;
 
 /// How far the field of view opens at top speed, as a fraction of BASE_FOV.
-/// Matches slideFOVScale 1.1.
 constexpr f32 FOV_SPEED_SCALE = 0.1f;
 
 struct PushConstants {

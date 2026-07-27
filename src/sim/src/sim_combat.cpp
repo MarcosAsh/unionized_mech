@@ -6,20 +6,19 @@ namespace sim {
 
 namespace {
 
-// The pilot carbine, converted from the R-201. Its aimed cone is zero, which is
-// exactly what the hitscan below already models, so the ray needs no changes to
-// be faithful; only the cadence and the falloff bands do.
-constexpr i16 SHOT_DAMAGE = 25;           // damage_near_value
-constexpr i16 SHOT_DAMAGE_FAR = 17;       // damage_far_value
-constexpr i16 SHOT_DAMAGE_VERY_FAR = 12;  // damage_very_far_value
-constexpr f32 SHOT_NEAR_DIST = 38.10f;    // damage_near_distance 1500u
-constexpr f32 SHOT_FAR_DIST = 50.80f;     // damage_far_distance 2000u
-constexpr u8 FIRE_COOLDOWN_TICKS = 4;     // fire_rate 13.5/s; 4 ticks is 900 RPM
+// The pilot carbine. Aimed fire is a zero-width ray, which is what the hitscan
+// below already models, so only the cadence and the falloff bands are tuning.
+constexpr i16 SHOT_DAMAGE = 25;           // full damage, inside the near band
+constexpr i16 SHOT_DAMAGE_FAR = 17;       // past the near band
+constexpr i16 SHOT_DAMAGE_VERY_FAR = 12;  // past the far band
+constexpr f32 SHOT_NEAR_DIST = 38.10f;    // metres of full damage
+constexpr f32 SHOT_FAR_DIST = 50.80f;     // metres before the last step down
+constexpr u8 FIRE_COOLDOWN_TICKS = 4;     // 900 rounds per minute at 60Hz
 constexpr f32 SHOT_RANGE = 200.0f;
 
 /// What a pilot shot lands at `dist` metres. Stepped rather than interpolated:
-/// the weapon defines three bands and reading a curve between them would invent
-/// numbers the source does not have.
+/// the weapon is defined as three bands, and reading a curve between them would
+/// invent precision the design does not have.
 [[nodiscard]] i16 shot_damage(f32 dist) {
     if (dist <= SHOT_NEAR_DIST) {
         return SHOT_DAMAGE;
