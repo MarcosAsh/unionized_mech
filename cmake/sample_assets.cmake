@@ -27,10 +27,12 @@ if(NOT EXISTS "${BLASTER_GLB}")
          DESTINATION "${CMAKE_BINARY_DIR}/sample/blaster")
 endif()
 
-# The character, the Quaternius CC0 Animated Robot: rigged, with clips for the
-# animation milestone.
-set(ROBOT_URL "https://static.poly.pizza/7d95dbce-8c73-489b-8298-f430b1f0dbdf.glb")
-set(ROBOT_SHA256 "54f1a6999cca701cdc2f8fb67bcd9a283e1154cb80cac356f031bed7c2e74cbe")
+# The character: Quaternius CC0 SWAT. Fully vertex skinned, unlike the Animated
+# Robot it replaces, which was rigid meshes parented to bones — the importer
+# bound 85% of that model to joint 0, so it followed the root and never
+# deformed. Authored in metres, 62 joints, 24 clips.
+set(ROBOT_URL "https://static.poly.pizza/713f6535-f4f3-4367-a4c6-ced126ae0936.glb")
+set(ROBOT_SHA256 "a835107bac833eb916c494e10997ae1709e85957ea6f6c59ace3c9a66f6d1fec")
 set(ROBOT_GLB "${CMAKE_BINARY_DIR}/sample/Robot.glb")
 
 if(NOT EXISTS "${ROBOT_GLB}")

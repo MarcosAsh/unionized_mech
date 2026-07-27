@@ -34,9 +34,10 @@ struct TrooperRig {
     u32 clip_run;
 };
 
-/// The Quaternius Animated Robot: 4.5 units tall, facing +Z against our
-/// yaw-zero-faces-minus-Z convention, 14 clips.
-constexpr TrooperRig TROOPER_RIG = {0.4f, 3.14159265f, 1, 2, 6};
+/// Quaternius SWAT: authored in metres at 1.82 tall so it needs almost no
+/// scaling, facing +Z against our yaw-zero-faces-minus-Z convention. Clips are
+/// alphabetical, which is why Run sits at 16 of 24.
+constexpr TrooperRig TROOPER_RIG = {0.99f, 3.14159265f, 0, 4, 16};
 
 /// Decorative duck placements on the plaza.
 struct DuckSpot {

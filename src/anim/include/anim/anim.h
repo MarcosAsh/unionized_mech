@@ -10,6 +10,13 @@
 
 namespace anim {
 
+/// Animation clips an imported model may carry. The importer truncates past
+/// this and the renderer loads exactly this many, so it lives here rather than
+/// as a literal in each: a model whose locomotion clip sits past a cap that
+/// only one side knows about silently loses its walk cycle.
+constexpr u32 MAX_CLIPS = 32;
+
+
 /// Upper bound on joints per skeleton. Game rigs run 30 to 90; 128 leaves room.
 constexpr u32 MAX_JOINTS = 128;
 

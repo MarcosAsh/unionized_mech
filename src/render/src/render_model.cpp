@@ -125,6 +125,10 @@ void model_begin(RenderModel& model) { model.queued = 0; }
 
 namespace {
 
+/// Smallest half-extent, in model units, a padded cull box may have. Sized to
+/// cover a human-scale character whose bind-pose bounds are degenerate.
+constexpr f32 MIN_ANIMATED_PAD = 1.5f;
+
 // Shared record writer. `bounds_pad` widens the cull box, which skinned models
 // need because animation moves vertices beyond the bind-pose bounds.
 void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot, core::Vec3 scale,
@@ -150,7 +154,15 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
             rec.color[c] = tint != nullptr ? sub.color[c] * tint[c] : sub.color[c];
         }
         for (u32 c = 0; c < 3; ++c) {
-            const f32 pad = bounds_pad * (sub.bounds_max[c] - sub.bounds_min[c]);
+            // A fully skinned mesh imports with a near-zero bind-pose box, since
+            // its vertices only take their real positions once the joints are
+            // applied. Scaling that by a fraction leaves it near-zero and the
+            // model gets frustum culled from almost everywhere, so padded boxes
+            // also get an absolute floor.
+            f32 pad = bounds_pad * (sub.bounds_max[c] - sub.bounds_min[c]);
+            if (bounds_pad > 0.0f && pad < MIN_ANIMATED_PAD) {
+                pad = MIN_ANIMATED_PAD;
+            }
             rec.bounds_min[c] = sub.bounds_min[c] - pad;
             rec.bounds_max[c] = sub.bounds_max[c] + pad;
         }
@@ -244,7 +256,7 @@ SkinnedModel skinned_model_load(gpu::Renderer& gpu, core::Arena& permanent, core
     model.vertex_count = static_cast<u32>(skin_data.size());
 
     // Clip storage lives in the permanent arena, sampled every frame.
-    for (u32 c = 0; c < 16; ++c) {
+    for (u32 c = 0; c < anim::MAX_CLIPS; ++c) {
         std::snprintf(path, sizeof(path), "%s.%u.uclip", base, c);
         core::Result<anim::Clip, const char*> clip = anim::clip_load(permanent, path);
         if (clip.is_err()) {

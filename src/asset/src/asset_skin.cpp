@@ -1,3 +1,4 @@
+#include "anim/anim.h"
 #include "asset_skin.h"
 
 #include <cgltf.h>
@@ -6,7 +7,8 @@ namespace asset {
 
 namespace {
 
-constexpr u32 MAX_CLIPS = 16;
+// Shared with the renderer so neither side can truncate behind the other.
+constexpr u32 MAX_CLIPS = anim::MAX_CLIPS;
 
 // The glTF skin index of `node`, or MAX_JOINTS when it is not a joint.
 u32 joint_index_of(const cgltf_skin* skin, const cgltf_node* node) {

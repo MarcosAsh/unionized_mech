@@ -126,7 +126,7 @@ struct SkinnedModel {
     u32 vertex_count = 0;
     u32 max_instances = 1;
     anim::Skeleton skeleton;
-    anim::Clip clips[16];
+    anim::Clip clips[anim::MAX_CLIPS];
     u32 clip_count = 0;
 };
 
