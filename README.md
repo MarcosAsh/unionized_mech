@@ -52,5 +52,6 @@ The first configure clones the pinned Vulkan headers, so it needs the network.
 Nothing binary is committed; the build downloads content pinned by hash and
 converts it with `um_import`. All of it is CC0: the Khronos sample Duck, the
 first-person blaster from [Kenney's Blaster Kit](https://kenney.nl/assets/blaster-kit),
-and the rigged character from [Quaternius](https://quaternius.com)' Animated
-Robot pack. Thanks to both for keeping public-domain game art alive.
+the rigged character from [Quaternius](https://quaternius.com), and a concrete
+surface from [ambientCG](https://ambientcg.com). Thanks to all three for
+keeping public-domain game art alive.
