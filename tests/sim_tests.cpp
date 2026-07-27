@@ -578,6 +578,56 @@ static void test_slide_boost_rate_limited() {
     ASSERT(peak < 10.0f);
 }
 
+// Sprint, jump on tick 60, then slam the stick backwards on `press_tick`.
+// Returns how much horizontal speed that single tick cost.
+static f32 lurch_probe_drop(u32 press_tick) {
+    World w{};
+    init_match(w);
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 200.0f;
+    w.chars[0].z = 200.0f;
+
+    World cur = w;
+    f32 before = 0.0f;
+    for (u32 i = 0; i <= press_tick; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.move_y = i == press_tick ? static_cast<i8>(-1) : static_cast<i8>(1);
+        if (i == 60) {
+            c.buttons = static_cast<u16>(Button::Jump);
+        }
+        if (i == press_tick) {
+            before = std::sqrt(cur.player().vx * cur.player().vx +
+                               cur.player().vz * cur.player().vz);
+        }
+        World next{};
+        simulate(cur, c, next);
+        cur = next;
+    }
+    const f32 after =
+        std::sqrt(cur.player().vx * cur.player().vx + cur.player().vz * cur.player().vz);
+    return before - after;
+}
+
+// Reversing the stick inside the post-jump window turns your momentum around
+// and charges you for it; the identical press once the window has closed only
+// gets ordinary air control. Comparing the two isolates the lurch: both runs
+// air-accelerate the same way, so the difference cannot be anything else.
+static void test_lurch_costs_speed_when_turning_back() {
+    const f32 inside = lurch_probe_drop(65);   // 5 ticks after the jump
+    const f32 outside = lurch_probe_drop(95);  // well past the 24-tick window
+
+    // Air acceleration alone can move speed by at most AIR_ACCEL * SIM_DT *
+    // AIR_MAX_SPEED in one tick, which is 0.3 m/s. A full-strength reversal
+    // takes half of everything you had.
+    ASSERT(outside < 0.5f);
+    ASSERT(inside > 1.0f);
+}
+
 int main() {
     // Every movement test below runs against the shipping level, so geometry
     // the game plays and geometry the tests assert on cannot drift apart. The
@@ -598,6 +648,7 @@ int main() {
     test_mech_crush();
     test_map_round_trip();
     test_nav_pathing();
+    test_lurch_costs_speed_when_turning_back();
     test_slide_boost_rate_limited();
     test_grenade_damages_enemy();
     test_step_over_kerb();

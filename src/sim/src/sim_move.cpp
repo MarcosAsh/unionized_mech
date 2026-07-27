@@ -29,6 +29,34 @@ constexpr f32 SLIDE_STEER_ACCEL = 4.0f;   // weak steering accel while sliding
 
 constexpr u8 MAX_AIR_JUMPS = 1;  // one extra jump in the air
 
+// Lurch. For a short grace period after any jump, newly pressing a direction
+// redirects the momentum you already have toward it. It is the single mechanic
+// that makes air control expressive: pressing steers, releasing does not, and
+// the whole family of "no-lurch" techniques exists to move without paying for
+// it. Turning far from where you are already going costs speed; a small
+// correction is free.
+constexpr u8 LURCH_FULL_TICKS = 12;      // 0.2s at undiminished strength
+constexpr u8 LURCH_END_TICKS = 24;       // strength reaches zero by 0.4s
+constexpr f32 LURCH_FREE_COS = 0.9063f;  // cos(25 degrees): redirect inside this is free
+constexpr f32 LURCH_TURN = 0.45f;        // radians one full-strength lurch turns you
+constexpr f32 LURCH_MAX_LOSS = 0.5f;     // speed given up turning all the way around
+
+/// Lurch strength `ticks` into the window. Full for the first stretch, then
+/// eased out to nothing. The real falloff is documented as not being a straight
+/// line but its shape is not published, so this is our curve, not a measurement.
+[[nodiscard]] f32 lurch_strength(u8 ticks) {
+    if (ticks == 0 || ticks > LURCH_END_TICKS) {
+        return 0.0f;
+    }
+    if (ticks <= LURCH_FULL_TICKS) {
+        return 1.0f;
+    }
+    const f32 span = static_cast<f32>(LURCH_END_TICKS - LURCH_FULL_TICKS);
+    const f32 gone = static_cast<f32>(ticks - LURCH_FULL_TICKS) / span;
+    const f32 left = 1.0f - gone;
+    return left * left;
+}
+
 // Forgiveness. These raise the floor without touching the ceiling.
 constexpr u8 COYOTE_TICKS = 6;       // jump still works ~100ms after a ledge
 constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landing
@@ -257,12 +285,15 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     }
 
     // Jumping: auto-hop on the ground, coyote, wall jump, double jump.
+    // Any jump arms the lurch window below. Walking off a ledge does not.
+    bool jumped = false;
     const bool coyote_ok = !grounded && !wallrunning && coyote <= COYOTE_TICKS && prev_c.vy <= 0.0f;
     if (grounded) {
         c.air_jumps = MAX_AIR_JUMPS;
         if (jump_down || jump_buffer > 0) {
             c.vy = JUMP_VELOCITY;
             jump_buffer = 0;
+            jumped = true;
         }
     } else if (wallrunning) {
         c.air_jumps = MAX_AIR_JUMPS;
@@ -273,12 +304,14 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
             c.vx += wall_nx * WALLJUMP_PUSH + wish_x * WALLJUMP_INPUT;
             c.vz += wall_nz * WALLJUMP_PUSH + wish_z * WALLJUMP_INPUT;
             jump_buffer = 0;
+            jumped = true;
         }
     } else if (climbing) {
         c.air_jumps = MAX_AIR_JUMPS;
     } else if (jump_pressed && coyote_ok) {
         c.vy = JUMP_VELOCITY;
         jump_buffer = 0;
+        jumped = true;
     } else if (jump_pressed && c.air_jumps > 0) {
         if (wish_len > 0.0f) {
             const f32 hspeed = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
@@ -288,10 +321,58 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         c.vy = JUMP_VELOCITY;
         c.air_jumps -= 1;
         jump_buffer = 0;
+        jumped = true;
     }
     c.jump_was_down = jump_down ? 1 : 0;
     c.jump_buffer = jump_buffer;
     c.coyote_ticks = coyote;
+
+    // Lurch: a direction newly pressed inside the post-jump window drags the
+    // momentum you already have toward it. A redirect, never an impulse, so it
+    // cannot manufacture speed; turning past the free cone spends some. Pressing
+    // costs, holding and releasing do not, which is the whole reason the
+    // no-lurch techniques exist.
+    u8 lurch = jumped ? static_cast<u8>(1)
+                      : (prev_c.lurch_ticks > 0 && prev_c.lurch_ticks < LURCH_END_TICKS
+                             ? static_cast<u8>(prev_c.lurch_ticks + 1)
+                             : static_cast<u8>(0));
+    const bool pressed_dir = (cmd.move_x != 0 && cmd.move_x != prev_c.last_move_x) ||
+                             (cmd.move_y != 0 && cmd.move_y != prev_c.last_move_y);
+    const f32 lurch_now = lurch_strength(lurch);
+    if (lurch_now > 0.0f && pressed_dir && wish_len > 0.0f) {
+        const f32 speed = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
+        if (speed > 0.01f) {
+            const f32 dir_x = c.vx / speed;
+            const f32 dir_z = c.vz / speed;
+            const f32 along = dir_x * wish_x + dir_z * wish_z;
+            const f32 turn = LURCH_TURN * lurch_now;
+            // Rotate the heading toward the press rather than blending the two
+            // vectors: blending is degenerate at exactly 180 degrees, where the
+            // midpoint of two opposite directions is the origin and the whole
+            // redirect silently vanishes. That is the case that matters most.
+            f32 nx = wish_x;
+            f32 nz = wish_z;
+            if (along < sim_cos(turn)) {
+                // Further away than one lurch reaches, so turn by that much and
+                // no more. The cross product picks which way around.
+                const f32 cross = dir_x * wish_z - dir_z * wish_x;
+                const f32 ct = sim_cos(turn);
+                const f32 st = cross >= 0.0f ? sim_sin(turn) : -sim_sin(turn);
+                nx = dir_x * ct - dir_z * st;
+                nz = dir_x * st + dir_z * ct;
+            }
+            // The cost rises with how far off the heading the press was, judged
+            // on the dot product rather than the angle so no inverse trig enters
+            // the sim. It is monotonic in the angle, which is all the rule needs.
+            f32 keep = 1.0f;
+            if (along < LURCH_FREE_COS) {
+                keep -= LURCH_MAX_LOSS * lurch_now * (LURCH_FREE_COS - along) /
+                        (LURCH_FREE_COS + 1.0f);
+            }
+            c.vx = nx * speed * keep;
+            c.vz = nz * speed * keep;
+        }
+    }
 
     // Move and slide, one axis at a time, against the static boxes.
     const core::Span<const Aabb> boxes = level_boxes();
@@ -376,6 +457,10 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     }
     c.on_ground = grounded_now ? 1 : 0;
     c.ducked = ducked ? 1 : 0;
+    // Landing closes the window; nothing else re-arms it but another jump.
+    c.lurch_ticks = grounded_now ? static_cast<u8>(0) : lurch;
+    c.last_move_x = cmd.move_x;
+    c.last_move_y = cmd.move_y;
 
     const bool wallrun_active = wallrunning && !grounded_now;
     c.wallrun_ticks = wallrun_active ? static_cast<u16>(prev_c.wallrun_ticks + 1) : 0;

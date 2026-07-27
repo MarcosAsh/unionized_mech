@@ -131,11 +131,15 @@ struct Character {
     u8 grenades = 0;         ///< Grenades left to throw this life.
     u8 grenade_was_down = 0; ///< Grenade button last tick, for edge detection.
     u8 slide_cooldown = 0;   ///< Ticks until a slide entry can pay out again.
+    u8 lurch_ticks = 0;      ///< Ticks into the post-jump lurch window; 0 is disarmed.
+    i8 last_move_x = 0;      ///< Previous tick's stick, so a press can be told from a hold.
+    i8 last_move_y = 0;
+    u8 pad0 = 0;
     u8 pad1 = 0;
     u8 pad2 = 0;
 };
 
-static_assert(sizeof(Character) == 104, "Character layout must stay packed for hashing");
+static_assert(sizeof(Character) == 108, "Character layout must stay packed for hashing");
 
 /// The whole simulation state: the match. Trivially copyable so it can be
 /// snapshotted and hashed by value. Slot 0 is the player; bot inputs are
