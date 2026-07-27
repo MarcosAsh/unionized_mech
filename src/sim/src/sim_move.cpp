@@ -20,11 +20,10 @@ constexpr f32 AIR_MAX_SPEED = 1.5f;    // capped air wish speed enables airstraf
 constexpr f32 FRICTION = 6.0f;         // ground friction
 constexpr f32 STOP_SPEED = 1.5f;       // floor on friction so slow stops are crisp
 
-constexpr f32 SLIDE_FRICTION = 1.5f;   // low friction so a slide keeps momentum
-constexpr f32 SLIDE_MIN_SPEED = 5.0f;  // crouch above this speed becomes a slide
-constexpr f32 SLIDE_BOOST = 4.0f;         // speed added when a slide begins
-constexpr f32 SLIDE_ACCEL = 4.0f;         // continued speed gain during a slide
-constexpr f32 SLIDE_MAX_SPEED = 16.0f;    // cap a slide builds toward
+constexpr f32 SLIDE_MIN_SPEED = 5.0f;     // crouch above this speed becomes a slide
+constexpr f32 SLIDE_DECEL = 1.27f;        // slidedecel 50 u/s^2, replaces friction
+constexpr f32 SLIDE_BOOST = 2.0f;         // entry burst, see the note at its use
+constexpr f32 SLIDE_MAX_SPEED = 12.0f;    // ceiling the entry burst cannot pass
 constexpr f32 SLIDE_STEER_SPEED = 4.0f;   // weak steering wish speed while sliding
 constexpr f32 SLIDE_STEER_ACCEL = 4.0f;   // weak steering accel while sliding
 
@@ -119,9 +118,16 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     if (grounded && !ground_jump) {
         const f32 speed = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
         if (speed > 0.0f) {
-            const f32 friction = sliding ? SLIDE_FRICTION : FRICTION;
-            const f32 control = speed < STOP_SPEED ? STOP_SPEED : speed;
-            f32 newspeed = speed - control * friction * SIM_DT;
+            // A slide swaps proportional friction for a flat deceleration, so
+            // it sheds a fixed amount per second instead of a fraction of what
+            // is left: the faster you enter, the further it carries you.
+            f32 newspeed;
+            if (sliding) {
+                newspeed = speed - SLIDE_DECEL * SIM_DT;
+            } else {
+                const f32 control = speed < STOP_SPEED ? STOP_SPEED : speed;
+                newspeed = speed - control * FRICTION * SIM_DT;
+            }
             if (newspeed < 0.0f) {
                 newspeed = 0.0f;
             }
@@ -157,12 +163,15 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         }
     }
 
-    // Slide dynamics: a burst on entry, then continued gain.
-    if (sliding) {
+    // Slide entry burst, paid once. Titanfall has no such boost: a slide there
+    // only spends momentum you arrived with, and the speed comes back from
+    // slopes. This arena is flat, so entry pays out instead and the decel above
+    // takes it back over the length of the slide. Revisit once the level has
+    // gradients worth sliding down.
+    if (sliding && prev_c.state != MoveState::Slide) {
         const f32 hs = sim_sqrt(c.vx * c.vx + c.vz * c.vz);
         if (hs > 0.0f) {
-            const bool was_sliding = prev_c.state == MoveState::Slide;
-            f32 target = was_sliding ? hs + SLIDE_ACCEL * SIM_DT : hs + SLIDE_BOOST;
+            f32 target = hs + SLIDE_BOOST;
             if (target > SLIDE_MAX_SPEED) {
                 target = SLIDE_MAX_SPEED;
             }
