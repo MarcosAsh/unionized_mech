@@ -46,3 +46,11 @@ Debug turns on AddressSanitizer and UndefinedBehaviorSanitizer. Run the tests
 with `ctest --preset debug`. `um_headless 600` runs the simulation with no
 window and prints its hash, and `gpu_probe` brings up Vulkan on the real device.
 The first configure clones the pinned Vulkan headers, so it needs the network.
+
+## Assets
+
+Nothing binary is committed; the build downloads content pinned by hash and
+converts it with `um_import`. All of it is CC0: the Khronos sample Duck, the
+first-person blaster from [Kenney's Blaster Kit](https://kenney.nl/assets/blaster-kit),
+and the rigged character from [Quaternius](https://quaternius.com)' Animated
+Robot pack. Thanks to both for keeping public-domain game art alive.

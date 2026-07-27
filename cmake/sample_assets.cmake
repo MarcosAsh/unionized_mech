@@ -1,6 +1,7 @@
-# Sample content for M2 development: the Khronos glTF sample Duck, downloaded
-# pinned by hash and converted to the native formats by um_import at build
-# time. Nothing here is committed; shipping content replaces this later.
+# Game content, downloaded pinned by hash and converted to the native formats
+# by um_import at build time. Nothing here is committed. All CC0: the Khronos
+# sample Duck, Kenney's Blaster Kit (kenney.nl), and the Quaternius Animated
+# Robot (quaternius.com, via poly.pizza).
 
 set(DUCK_URL
     "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Binary/Duck.glb")
@@ -12,61 +13,29 @@ if(NOT EXISTS "${DUCK_GLB}")
     file(DOWNLOAD "${DUCK_URL}" "${DUCK_GLB}" EXPECTED_HASH SHA256=${DUCK_SHA256})
 endif()
 
-# The Crytek Sponza atrium, the canonical multi-material test scene. Its glTF
-# form is a .gltf plus a .bin plus loose textures, so the file list is read
-# from the manifest itself. The commit-pinned raw URL makes every file
-# immutable without per-file hashes.
-set(SPONZA_COMMIT "d7a3cc8e51d7c573771ae77a57f16b0662a905c6")
-set(SPONZA_BASE
-    "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/${SPONZA_COMMIT}/2.0/Sponza/glTF")
-set(SPONZA_DIR "${CMAKE_BINARY_DIR}/sample/sponza")
-set(SPONZA_GLTF "${SPONZA_DIR}/Sponza.gltf")
+# The first-person weapon, from Kenney's CC0 Blaster Kit.
+set(BLASTER_URL
+    "https://kenney.nl/media/pages/assets/blaster-kit/261d80a716-1753959510/kenney_blaster-kit_2.1.zip")
+set(BLASTER_SHA256 "91e3093e95427d59625e7e2ce2d0399b861600160fd0b4ada7714796b67cea8c")
+set(BLASTER_ZIP "${CMAKE_BINARY_DIR}/sample/blaster-kit.zip")
+set(BLASTER_GLB "${CMAKE_BINARY_DIR}/sample/blaster/Models/GLB format/blaster-d.glb")
 
-if(NOT EXISTS "${SPONZA_GLTF}")
-    message(STATUS "Downloading sample asset: Sponza.gltf")
-    file(DOWNLOAD "${SPONZA_BASE}/Sponza.gltf" "${SPONZA_GLTF}" STATUS _sponza_status)
-    list(GET _sponza_status 0 _sponza_code)
-    if(NOT _sponza_code EQUAL 0)
-        message(FATAL_ERROR "Sponza download failed: ${_sponza_status}")
-    endif()
+if(NOT EXISTS "${BLASTER_GLB}")
+    message(STATUS "Downloading sample asset: Blaster Kit")
+    file(DOWNLOAD "${BLASTER_URL}" "${BLASTER_ZIP}" EXPECTED_HASH SHA256=${BLASTER_SHA256})
+    file(ARCHIVE_EXTRACT INPUT "${BLASTER_ZIP}"
+         DESTINATION "${CMAKE_BINARY_DIR}/sample/blaster")
 endif()
 
-# Pull every buffer and image URI named in the manifest.
-file(READ "${SPONZA_GLTF}" _sponza_json)
-set(_sponza_uris "")
-foreach(section buffers images)
-    string(JSON _count ERROR_VARIABLE _err LENGTH "${_sponza_json}" ${section})
-    if(_err)
-        continue()
-    endif()
-    math(EXPR _last "${_count} - 1")
-    foreach(i RANGE ${_last})
-        string(JSON _uri ERROR_VARIABLE _err GET "${_sponza_json}" ${section} ${i} uri)
-        if(NOT _err AND NOT _uri MATCHES "^data:")
-            list(APPEND _sponza_uris "${_uri}")
-        endif()
-    endforeach()
-endforeach()
-foreach(_uri IN LISTS _sponza_uris)
-    if(NOT EXISTS "${SPONZA_DIR}/${_uri}")
-        message(STATUS "Downloading Sponza file: ${_uri}")
-        file(DOWNLOAD "${SPONZA_BASE}/${_uri}" "${SPONZA_DIR}/${_uri}" STATUS _dl_status)
-        list(GET _dl_status 0 _dl_code)
-        if(NOT _dl_code EQUAL 0)
-            message(FATAL_ERROR "Sponza file ${_uri} failed: ${_dl_status}")
-        endif()
-    endif()
-endforeach()
+# The character, the Quaternius CC0 Animated Robot: rigged, with clips for the
+# animation milestone.
+set(ROBOT_URL "https://static.poly.pizza/7d95dbce-8c73-489b-8298-f430b1f0dbdf.glb")
+set(ROBOT_SHA256 "54f1a6999cca701cdc2f8fb67bcd9a283e1154cb80cac356f031bed7c2e74cbe")
+set(ROBOT_GLB "${CMAKE_BINARY_DIR}/sample/Robot.glb")
 
-# The Khronos Fox: a small rigged, animated model, the canonical skinning test.
-set(FOX_URL
-    "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb")
-set(FOX_SHA256 "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7")
-set(FOX_GLB "${CMAKE_BINARY_DIR}/sample/Fox.glb")
-
-if(NOT EXISTS "${FOX_GLB}")
-    message(STATUS "Downloading sample asset: Fox.glb")
-    file(DOWNLOAD "${FOX_URL}" "${FOX_GLB}" EXPECTED_HASH SHA256=${FOX_SHA256})
+if(NOT EXISTS "${ROBOT_GLB}")
+    message(STATUS "Downloading sample asset: Robot.glb")
+    file(DOWNLOAD "${ROBOT_URL}" "${ROBOT_GLB}" EXPECTED_HASH SHA256=${ROBOT_SHA256})
 endif()
 
 set(ASSET_DIR "${CMAKE_BINARY_DIR}/assets")
@@ -79,16 +48,16 @@ add_custom_command(
     COMMENT "um_import duck"
     VERBATIM)
 add_custom_command(
-    OUTPUT "${ASSET_DIR}/sponza.umesh"
-    COMMAND um_import "${SPONZA_GLTF}" "${ASSET_DIR}/sponza"
-    DEPENDS um_import "${SPONZA_GLTF}"
-    COMMENT "um_import sponza"
+    OUTPUT "${ASSET_DIR}/blaster.umesh"
+    COMMAND um_import "${BLASTER_GLB}" "${ASSET_DIR}/blaster"
+    DEPENDS um_import "${BLASTER_GLB}"
+    COMMENT "um_import blaster"
     VERBATIM)
 add_custom_command(
-    OUTPUT "${ASSET_DIR}/fox.umesh"
-    COMMAND um_import "${FOX_GLB}" "${ASSET_DIR}/fox"
-    DEPENDS um_import "${FOX_GLB}"
-    COMMENT "um_import fox"
+    OUTPUT "${ASSET_DIR}/robot.umesh"
+    COMMAND um_import "${ROBOT_GLB}" "${ASSET_DIR}/robot"
+    DEPENDS um_import "${ROBOT_GLB}"
+    COMMENT "um_import robot"
     VERBATIM)
 add_custom_target(sample_assets
-    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/sponza.umesh" "${ASSET_DIR}/fox.umesh")
+    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/blaster.umesh" "${ASSET_DIR}/robot.umesh")

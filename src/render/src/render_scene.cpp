@@ -111,6 +111,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // records, zero the survivor counters, and let compute build the indirect
     // command buffers from whatever the frustum keeps.
     model_begin(models_->duck);
+    model_begin(models_->gun);
     model_begin(models_->viewmodel);
     model_begin(models_->trooper);
     model_begin(models_->mech);
@@ -139,16 +140,20 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
         model_queue_tinted(models_->mech, frame.slot, core::Vec3{mech.x, mech.y, mech.z},
                            mech_rot, 1.0f, mech_tint);
     }
+    // The robot model is 4.5 units tall facing +Z; scale it into the 1.8m
+    // hull and flip it to our yaw-zero-faces-minus-Z convention.
+    constexpr f32 TROOPER_SCALE = 0.4f;
+    constexpr f32 PI = 3.14159265f;
     for (u32 i = 1; i < sim::MAX_PLAYERS; ++i) {
         const sim::Character& other = curr.chars[i];
         if (other.alive == 0) {
             continue;
         }
-        const core::Quat rot = core::Quat::from_axis_half(
-            core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(other.yaw * 0.5f),
-            std::cos(other.yaw * 0.5f));
+        const f32 half = (other.yaw + PI) * 0.5f;
+        const core::Quat rot = core::Quat::from_axis_half(core::Vec3{0.0f, 1.0f, 0.0f},
+                                                          std::sin(half), std::cos(half));
         model_queue_tinted(models_->trooper, frame.slot, core::Vec3{other.x, other.y, other.z},
-                           rot, 1.0f, TEAM_TINTS[other.team & 1]);
+                           rot, TROOPER_SCALE, TEAM_TINTS[other.team & 1]);
     }
 
     // Tracers: a bright beam along each recent shot. Bots get world-space
@@ -186,8 +191,9 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     const f32 kick =
         curr.player().shot_age < 4 ? (4.0f - static_cast<f32>(curr.player().shot_age)) * 0.012f
                                    : 0.0f;
-    model_queue(models_->viewmodel, frame.slot, core::Vec3{0.17f, -0.14f, -0.33f + kick},
-                core::Quat{}, 1.0f);
+    model_queue(models_->gun, frame.slot, core::Vec3{0.17f, -0.14f, -0.45f + kick}, core::Quat{},
+                0.6f);
+    model_queue(models_->viewmodel, frame.slot, core::Vec3{}, core::Quat{}, 1.0f);
     if (curr.player().shot_hit != 0 && curr.player().shot_age < 8) {
         model_queue(models_->hitmarker, frame.slot, core::Vec3{0.0f, 0.0f, -1.2f}, core::Quat{},
                     1.0f);
@@ -237,11 +243,12 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     globals.sun_dir[3] = 0.0f;
     globals.shadow_tex = shadow_tex_;
 
-    const RenderModel* fill_models[8] = {&models_->duck,      &models_->viewmodel,
-                                         &models_->trooper,   &models_->mech,
-                                         &models_->tracer,    &models_->tracer_vm,
-                                         &models_->hitmarker, &models_->overlay};
-    for (u32 i = 0; i < 8; ++i) {
+    const RenderModel* fill_models[9] = {&models_->duck,      &models_->gun,
+                                         &models_->viewmodel, &models_->trooper,
+                                         &models_->mech,      &models_->tracer,
+                                         &models_->tracer_vm, &models_->hitmarker,
+                                         &models_->overlay};
+    for (u32 i = 0; i < 9; ++i) {
         if (fill_models[i]->loaded) {
             vkCmdFillBuffer(frame.cmd, fill_models[i]->counts.handle,
                             static_cast<u64>(frame.slot) * PASS_COUNT * sizeof(u32),
@@ -268,6 +275,8 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                frame.slot, PASS_CAMERA);
     // The viewmodel is always on screen by construction: cull it with planes
     // that accept everything, since its record is in camera space.
+    model_cull(models_->gun, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, accept_all,
+               frame.slot, PASS_CAMERA);
     model_cull(models_->viewmodel, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_,
                accept_all, frame.slot, PASS_CAMERA);
     model_cull(models_->trooper, frame.cmd, cull_pipeline_, cull_layout_, bindless_set_, planes,
@@ -326,12 +335,14 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                 if (other.alive == 0) {
                     continue;
                 }
+                const f32 half = (other.yaw + PI) * 0.5f;
                 const core::Quat rot = core::Quat::from_axis_half(
-                    core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(other.yaw * 0.5f),
-                    std::cos(other.yaw * 0.5f));
-                instances[instance_count++] = make_rt_instance(
-                    core::Mat4::trs(core::Vec3{other.x, other.y, other.z}, rot),
-                    models_->trooper_blas.address);
+                    core::Vec3{0.0f, 1.0f, 0.0f}, std::sin(half), std::cos(half));
+                core::Mat4 world = core::Mat4::trs(core::Vec3{other.x, other.y, other.z}, rot);
+                world = world * core::Mat4::scale(
+                                    core::Vec3{TROOPER_SCALE, TROOPER_SCALE, TROOPER_SCALE});
+                instances[instance_count++] =
+                    make_rt_instance(world, models_->trooper_blas.address);
             }
         }
         record_rt_sun(*gpu_, frame.cmd,
@@ -436,6 +447,7 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // The far plane reaches the tracer's endpoint, which sits at the real
     // impact distance; depth precision near the gun is unaffected.
     const Mat4 vm_proj = perspective(1.05f, aspect, 0.05f, 300.0f);
+    model_draw_culled(models_->gun, frame.cmd, mesh_layout_, vm_proj, globals_idx, frame.slot);
     model_draw_culled(models_->viewmodel, frame.cmd, mesh_layout_, vm_proj, globals_idx,
                       frame.slot);
     model_draw_culled(models_->tracer_vm, frame.cmd, mesh_layout_, vm_proj, globals_idx,

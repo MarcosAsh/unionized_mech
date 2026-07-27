@@ -14,6 +14,7 @@ namespace render {
 /// public header can keep them behind a forward declaration.
 struct SceneModels {
     RenderModel duck;
+    RenderModel gun;
     RenderModel viewmodel;
     RenderModel trooper;
     RenderModel mech;

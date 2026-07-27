@@ -65,8 +65,14 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     scene.models_->white_texture = gpu.create_texture(white, 1, 1).bindless_index;
     scene.models_->duck =
         model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
+    scene.models_->gun =
+        model_load(gpu, scratch, ASSET_DIR "/blaster", scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
-    scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
+    scene.models_->trooper =
+        model_load(gpu, scratch, ASSET_DIR "/robot", scene.models_->white_texture);
+    if (!scene.models_->trooper.loaded) {
+        scene.models_->trooper = make_trooper(gpu, scene.models_->white_texture);
+    }
     scene.models_->mech = make_mech(gpu, scene.models_->white_texture);
     scene.models_->tracer = make_tracer(gpu, scene.models_->white_texture);
     scene.models_->tracer_vm = make_tracer(gpu, scene.models_->white_texture);

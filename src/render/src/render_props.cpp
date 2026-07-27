@@ -107,59 +107,40 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices) {
 }
 
 RenderModel make_viewmodel(gpu::Renderer& gpu, u32 fallback_texture) {
-    // Barrel and grip in gunmetal, then the sight blade and crosshair ticks in
-    // the bright accent colour.
-    static asset::MeshVertex verts[7 * 24];
-    static u32 indices[7 * 36];
+    // Just the crosshair now: four ticks in camera space, dead centre. The
+    // weapon itself is the imported blaster model.
+    static asset::MeshVertex verts[4 * 24];
+    static u32 indices[4 * 36];
     u32 vc = 0;
     u32 ic = 0;
-    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 0.0f, -0.10f},
-                 core::Vec3{0.022f, 0.022f, 0.14f});
-    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, -0.055f, 0.02f},
-                 core::Vec3{0.030f, 0.050f, 0.050f});
-    add_mesh_box(verts, indices, &vc, &ic, core::Vec3{0.0f, 0.034f, -0.02f},
-                 core::Vec3{0.008f, 0.012f, 0.030f});
-
-    static asset::Submesh subs[2];
-    subs[0].index_offset = 0;
-    subs[0].index_count = 72;
-    subs[0].texture = asset::NO_TEXTURE;
-    subs[0].color[0] = 0.16f;
-    subs[0].color[1] = 0.16f;
-    subs[0].color[2] = 0.18f;
-    subs[1].index_offset = 72;
-    subs[1].index_count = 36;
-    subs[1].texture = asset::NO_TEXTURE;
-    subs[1].color[0] = 0.90f;
-    subs[1].color[1] = 0.45f;
-    subs[1].color[2] = 0.15f;
-    for (u32 i = 0; i < 2; ++i) {
-        for (u32 c = 0; c < 3; ++c) {
-            subs[i].bounds_min[c] = -0.3f;
-            subs[i].bounds_max[c] = 0.3f;
-        }
-    }
-
-    // The crosshair rides in the viewmodel model: these offsets cancel the
-    // camera anchor so the ticks sit dead centre of the view.
-    const core::Vec3 recenter{-0.17f, 0.14f, -0.87f};  // anchor is (0.17,-0.14,-0.33)
+    const core::Vec3 center{0.0f, 0.0f, -1.2f};
     const f32 gap = 0.012f;
     const f32 arm = 0.010f;
     const f32 thick = 0.0016f;
-    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{gap + arm * 0.5f, 0.0f, 0.0f},
+    add_mesh_box(verts, indices, &vc, &ic, center + core::Vec3{gap + arm * 0.5f, 0.0f, 0.0f},
                  core::Vec3{arm * 0.5f, thick, thick});
-    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{-gap - arm * 0.5f, 0.0f, 0.0f},
+    add_mesh_box(verts, indices, &vc, &ic, center + core::Vec3{-gap - arm * 0.5f, 0.0f, 0.0f},
                  core::Vec3{arm * 0.5f, thick, thick});
-    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{0.0f, gap + arm * 0.5f, 0.0f},
+    add_mesh_box(verts, indices, &vc, &ic, center + core::Vec3{0.0f, gap + arm * 0.5f, 0.0f},
                  core::Vec3{thick, arm * 0.5f, thick});
-    add_mesh_box(verts, indices, &vc, &ic, recenter + core::Vec3{0.0f, -gap - arm * 0.5f, 0.0f},
+    add_mesh_box(verts, indices, &vc, &ic, center + core::Vec3{0.0f, -gap - arm * 0.5f, 0.0f},
                  core::Vec3{thick, arm * 0.5f, thick});
-    subs[1].index_count = 36 + 4 * 36;  // sight blade plus the crosshair ticks
-
+    static asset::Submesh sub;
+    sub.index_count = 4 * 36;
+    sub.texture = asset::NO_TEXTURE;
+    sub.color[0] = 0.90f;
+    sub.color[1] = 0.45f;
+    sub.color[2] = 0.15f;
+    sub.bounds_min[0] = -0.3f;
+    sub.bounds_min[1] = -0.3f;
+    sub.bounds_min[2] = -1.5f;
+    sub.bounds_max[0] = 0.3f;
+    sub.bounds_max[1] = 0.3f;
+    sub.bounds_max[2] = 0.3f;
     asset::MeshData mesh;
     mesh.vertices = core::Span<const asset::MeshVertex>(verts, vc);
     mesh.indices = core::Span<const u32>(indices, ic);
-    mesh.submeshes = core::Span<const asset::Submesh>(subs, 2);
+    mesh.submeshes = core::Span<const asset::Submesh>(&sub, 1);
     return model_from_data(gpu, mesh, fallback_texture);
 }
 
