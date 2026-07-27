@@ -11,3 +11,6 @@ compile_commands.json
 /NEXT_STEPS.md
 /TUNING.md
 /HANDOFF.md
+
+# Test scratch files, written into the working tree by the test runs.
+*.tmp
