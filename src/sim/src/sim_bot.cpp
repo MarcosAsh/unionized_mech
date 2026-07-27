@@ -29,6 +29,15 @@ constexpr u32 ROAM_COUNT = sizeof(ROAM_POINTS) / sizeof(ROAM_POINTS[0]);
 constexpr f32 BOT_VIEW_RANGE = 70.0f;
 constexpr f32 AIM_TOLERANCE = 0.06f;  // radians of error before firing
 
+// Bot decision thresholds, not physics. A bot commits to a wall above this
+// speed because a wallrun below it drops immediately and looks like a stumble.
+constexpr f32 BOT_WALLRUN_SPEED = 5.0f;
+
+// Grenades are thrown into this band only: closer and the thrower is inside
+// their own blast, further and the arc falls short of anything useful.
+constexpr f32 BOT_NADE_MIN_D2 = 100.0f;   // 10m
+constexpr f32 BOT_NADE_MAX_D2 = 900.0f;   // 30m
+
 // Steer look_dx so yaw eases toward `target_yaw`.
 i16 steer(f32 current, f32 target, f32 rate) {
     f32 diff = wrap_angle(target - current);
@@ -109,6 +118,12 @@ InputCmd bot_think(const World& prev, u32 index) {
         if (aim_err > -AIM_TOLERANCE && aim_err < AIM_TOLERANCE && (wob >> 16 & 3) != 0) {
             cmd.buttons |= static_cast<u16>(Button::Fire);
         }
+        // An occasional grenade at mid range. Rare on purpose: two per life, and
+        // a bot that leads every engagement with one stops reading as a rifleman.
+        if (me.grenades > 0 && best_d2 > BOT_NADE_MIN_D2 && best_d2 < BOT_NADE_MAX_D2 &&
+            (wob >> 20 & 127) == 0) {
+            cmd.buttons |= static_cast<u16>(Button::Grenade);
+        }
         const u32 r = mix(prev.seed, prev.tick.raw / 20, index);
         cmd.move_x = static_cast<i8>((r & 3) == 0 ? -1 : ((r & 3) == 1 ? 1 : 0));
         cmd.move_y = static_cast<i8>((r >> 2 & 3) != 0 ? 1 : 0);
@@ -116,6 +131,12 @@ InputCmd bot_think(const World& prev, u32 index) {
             cmd.buttons |= static_cast<u16>(Button::Jump);
         }
         return cmd;
+    }
+
+    // Nobody in sight is the moment to top up. Reloading only when the magazine
+    // runs dry means always reloading in the middle of a fight.
+    if (me.ammo < weapon_mag(me) && me.reserve > 0) {
+        cmd.buttons |= static_cast<u16>(Button::Reload);
     }
 
     // No enemy: walk the waypoint graph toward a periodically re-rolled goal
@@ -147,11 +168,31 @@ InputCmd bot_think(const World& prev, u32 index) {
             me.yaw + (dot_f < 0.0f ? (cross_y < 0.0f ? -0.5f : 0.5f) : cross_y * 0.6f);
         cmd.look_dx = steer(me.yaw, desired_yaw, 0.10f);
         cmd.move_y = 1;
+
+        // Take the walls. A wallrun holds well above sprint speed, so a bot that
+        // only ever runs the floor is crossing the level the slow way. Jumping
+        // into a wall while already carrying speed is all it takes to start one,
+        // and holding forward is what keeps it going.
+        f32 wall_nx = 0.0f;
+        f32 wall_nz = 0.0f;
+        f32 wall_top = 0.0f;
+        const bool wall_near =
+            find_wall(me.x, me.y, me.z, HULL_HEIGHT, level_boxes(), &wall_nx, &wall_nz, &wall_top);
+        // Being near a wall is not enough: a wallrun needs speed ALONG the face,
+        // and a bot charging straight at one just bounces off. Split the
+        // velocity against the wall normal and require the same thing the
+        // movement code does, or the jump is wasted.
+        const f32 speed2 = me.vx * me.vx + me.vz * me.vz;
+        const f32 into = me.vx * wall_nx + me.vz * wall_nz;  // positive is away
+        const f32 along2 = speed2 - into * into;
+        const bool mount_wall = wall_near && me.on_ground != 0 &&
+                                along2 > BOT_WALLRUN_SPEED * BOT_WALLRUN_SPEED && into < 1.0f;
+
         const u32 r = mix(prev.seed, prev.tick.raw / 30, index ^ 0x55u);
-        if ((r & 31) == 0 || climb_hint ||
+        if (mount_wall || (r & 31) == 0 || climb_hint ||
             (me.on_ground != 0 && me.vx * me.vx + me.vz * me.vz < 1.0f &&
              prev.tick.raw % 90 == (index * 9) % 90)) {
-            cmd.buttons |= static_cast<u16>(Button::Jump);  // hop, climb, or unstick
+            cmd.buttons |= static_cast<u16>(Button::Jump);  // wallrun, hop, climb, or unstick
         }
     }
     return cmd;
