@@ -40,6 +40,9 @@ InputCmd scripted_input(u32 tick) {
     if (tick % 149u < 5u) {
         buttons |= static_cast<u16>(Button::Reload);
     }
+    if (tick % 211u < 3u) {
+        buttons |= static_cast<u16>(Button::Grenade);
+    }
     c.buttons = buttons;
     return c;
 }
@@ -91,6 +94,7 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
         }
         return;
     }
+    step_grenades(next, cmds);
     resolve_combat(next, cmds);
     for (u32 team = 0; team < 2; ++team) {
         if (team_kills(next, team) >= WIN_KILLS) {
@@ -103,8 +107,8 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
 u64 hash(const World& w) {
     // Character and Mech are asserted padding-free, so the world hashes
     // byte-wise.
-    static_assert(sizeof(World) ==
-                  12 + sizeof(Mech) + sizeof(Character) * MAX_PLAYERS);
+    static_assert(sizeof(World) == 12 + sizeof(Mech) + sizeof(Character) * MAX_PLAYERS +
+                                       sizeof(Grenade) * MAX_GRENADES);
     return fnv1a(0xcbf29ce484222325ull, &w, sizeof(World));
 }
 

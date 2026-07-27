@@ -89,11 +89,38 @@ const Weapon& held_weapon(const Character& c) {
     return c.merged != 0 ? WEAPONS[WEAPON_CHASSIS] : weapon_def(c.weapon);
 }
 
+void apply_damage(World& next, u32 attacker, u32 target_index, i16 damage) {
+    Character& target = next.chars[target_index];
+    if (target.alive == 0 || damage <= 0) {
+        return;
+    }
+    target.hurt_age = 0;
+    if (target.merged != 0) {
+        // Damage to a merged robot lands on the chassis. Its pilot evacuates
+        // intact when the chassis dies; wrecking it scores.
+        next.mech.health = static_cast<i16>(next.mech.health - damage);
+        if (next.mech.health <= 0) {
+            next.mech.alive = 0;
+            next.mech.respawn_ticks = MECH_REBUILD_TICKS;
+            eject_pilot(next, target_index);
+            next.chars[attacker].kills += 1;
+        }
+        return;
+    }
+    target.health = static_cast<i16>(target.health - damage);
+    if (target.health <= 0) {
+        target.alive = 0;
+        target.respawn_ticks = RESPAWN_TICKS;
+        next.chars[attacker].kills += 1;
+    }
+}
+
 void rearm(Character& c) {
     const Weapon& w = weapon_def(c.weapon);
     c.ammo = w.mag;
     c.reserve = w.reserve;
     c.reload_ticks = 0;
+    c.grenades = GRENADES_PER_LIFE;
 }
 
 bool segment_clear(f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz) {
@@ -197,27 +224,7 @@ void resolve_combat(World& next, const InputCmd cmds[MAX_PLAYERS]) {
         if (hit >= 0) {
             // Damage falls off with the distance the ray just travelled; a
             // weapon with equal bands, like the cannon, simply reads flat.
-            const i16 damage = shot_damage(weapon, best_t);
-            Character& target = next.chars[hit];
-            target.hurt_age = 0;
-            if (target.merged != 0) {
-                // Damage to a merged robot lands on the chassis. Its pilot
-                // evacuates intact when the chassis dies; wrecking it scores.
-                next.mech.health = static_cast<i16>(next.mech.health - damage);
-                if (next.mech.health <= 0) {
-                    next.mech.alive = 0;
-                    next.mech.respawn_ticks = MECH_REBUILD_TICKS;
-                    eject_pilot(next, static_cast<u32>(hit));
-                    shooter.kills += 1;
-                }
-            } else {
-                target.health = static_cast<i16>(target.health - damage);
-                if (target.health <= 0) {
-                    target.alive = 0;
-                    target.respawn_ticks = RESPAWN_TICKS;
-                    shooter.kills += 1;
-                }
-            }
+            apply_damage(next, i, static_cast<u32>(hit), shot_damage(weapon, best_t));
         }
     }
 

@@ -14,6 +14,14 @@ constexpr f32 MECH_EYE = 3.9f;
 constexpr u16 MECH_REBUILD_TICKS = 1800;  // thirty seconds
 constexpr u16 RESPAWN_TICKS = 180;        // three seconds
 
+/// Downward acceleration, deliberately floaty. Shared: characters, the chassis,
+/// and thrown grenades all fall at the same rate, and a second copy of this
+/// number would let them quietly disagree.
+constexpr f32 GRAVITY = 15.0f;
+
+/// Grenades a character carries out of a spawn.
+constexpr u8 GRENADES_PER_LIFE = 2;
+
 /// Eye height above the feet, where rays start and bots look from. Must match
 /// the render camera exactly, or shots land away from the crosshair.
 [[nodiscard]] inline f32 eye_height(const Character& c) {
@@ -64,6 +72,14 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd);
 
 /// Resolve this tick's shots, reloads, damage, deaths, and respawns.
 void resolve_combat(World& next, const InputCmd cmds[MAX_PLAYERS]);
+
+/// Apply `damage` from `attacker` to `target_index`, routing it to the chassis
+/// when the target is merged, and handling the kill, the score, and the eject.
+/// Every source of damage goes through here so none of them can drift.
+void apply_damage(World& next, u32 attacker, u32 target_index, i16 damage);
+
+/// Throw, fly, bounce, and detonate this tick's grenades.
+void step_grenades(World& next, const InputCmd cmds[MAX_PLAYERS]);
 
 /// Merge and eject transitions, mech movement under its pilot, and the
 /// destroyed-chassis rebuild countdown. Runs after the characters step.

@@ -2,6 +2,7 @@ add_library(sim STATIC
     src/sim.cpp
     src/sim_bot.cpp
     src/sim_combat.cpp
+    src/sim_grenade.cpp
     src/sim_level.cpp
     src/sim_math.cpp
     src/sim_mech.cpp

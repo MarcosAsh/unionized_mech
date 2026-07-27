@@ -37,6 +37,7 @@ enum class Button : u16 {
     Aim = 0x0008,
     Use = 0x0010,
     Reload = 0x0020,
+    Grenade = 0x0040,
 };
 
 /// True when `b` is held in `buttons`.
@@ -127,10 +128,14 @@ struct Character {
     u8 use_was_down = 0;   ///< Use button state last tick, for edge detection.
     u8 weapon = 0;         ///< Index into the weapon table; 0 is the carbine.
     u8 reload_was_down = 0;  ///< Reload button last tick, for edge detection.
+    u8 grenades = 0;         ///< Grenades left to throw this life.
+    u8 grenade_was_down = 0; ///< Grenade button last tick, for edge detection.
     u8 pad0 = 0;
+    u8 pad1 = 0;
+    u8 pad2 = 0;
 };
 
-static_assert(sizeof(Character) == 100, "Character layout must stay packed for hashing");
+static_assert(sizeof(Character) == 104, "Character layout must stay packed for hashing");
 
 /// The whole simulation state: the match. Trivially copyable so it can be
 /// snapshotted and hashed by value. Slot 0 is the player; bot inputs are
@@ -162,6 +167,27 @@ struct Mech {
 
 static_assert(sizeof(Mech) == 36, "Mech layout must stay packed for hashing");
 
+/// Grenades in flight at once, across every character. Throws beyond this are
+/// dropped rather than queued: a fixed budget keeps World a fixed size, which
+/// snapshotting and hashing both depend on.
+constexpr u32 MAX_GRENADES = 16;
+
+/// One grenade arcing through the world. Packed for byte-wise hashing, like
+/// Character and Mech.
+struct Grenade {
+    f32 x = 0.0f;
+    f32 y = 0.0f;
+    f32 z = 0.0f;
+    f32 vx = 0.0f;
+    f32 vy = 0.0f;
+    f32 vz = 0.0f;
+    u16 fuse_ticks = 0;  ///< Ticks until it goes off.
+    u8 owner = 0;        ///< Character slot that threw it, credited for kills.
+    u8 active = 0;       ///< 1 while this slot holds a live grenade.
+};
+
+static_assert(sizeof(Grenade) == 28, "Grenade layout must stay packed for hashing");
+
 struct World {
     TickId tick;
     u32 seed = 0x4d454348u;  ///< Feeds every in-simulation random choice.
@@ -170,6 +196,7 @@ struct World {
     u8 pad = 0;
     Mech mech;
     Character chars[MAX_PLAYERS];
+    Grenade grenades[MAX_GRENADES];
 
     /// The local player's character.
     [[nodiscard]] const Character& player() const { return chars[0]; }

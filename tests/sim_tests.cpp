@@ -494,6 +494,52 @@ static void test_map_nav_fully_connected() {
     }
 }
 
+// A thrown grenade leaves the hand, arcs, and hurts an enemy inside the blast.
+// Aiming straight down keeps the landing point predictable: it drops at the
+// thrower's feet instead of depending on the whole arc.
+static void test_grenade_damages_enemy() {
+    World w{};
+    init_match(w);
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 500.0f;
+        w.chars[i].z = 500.0f;
+        w.chars[i].team = 0;
+    }
+    w.chars[0].x = 0.0f;
+    w.chars[0].z = 0.0f;
+    w.chars[0].pitch = -1.5f;  // very nearly straight down
+    w.chars[1].x = 0.0f;
+    w.chars[1].z = -2.0f;
+    w.chars[1].team = 1;
+
+    const u8 carried = w.chars[0].grenades;
+    ASSERT(carried > 0);
+
+    World cur = w;
+    bool thrown = false;
+    bool hurt = false;
+    for (u32 i = 0; i < 240; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        if (i == 1) {
+            c.buttons = static_cast<u16>(Button::Grenade);
+        }
+        World next{};
+        simulate(cur, c, next);
+        cur = next;
+        if (cur.chars[0].grenades < carried) {
+            thrown = true;
+        }
+        // Checked every tick: a kill respawns the target at full health, which
+        // would hide the damage if we only looked at the end.
+        if (cur.chars[1].health < 100 || cur.chars[1].alive == 0) {
+            hurt = true;
+        }
+    }
+    ASSERT(thrown);
+    ASSERT(hurt);
+}
+
 int main() {
     // Every movement test below runs against the shipping level, so geometry
     // the game plays and geometry the tests assert on cannot drift apart. The
@@ -514,6 +560,7 @@ int main() {
     test_mech_crush();
     test_map_round_trip();
     test_nav_pathing();
+    test_grenade_damages_enemy();
     test_step_over_kerb();
     test_map_nav_fully_connected();
     core::log_info("sim_tests: all passed");

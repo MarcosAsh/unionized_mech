@@ -11,7 +11,6 @@ namespace {
 // bit-identical on every target.
 constexpr f32 LOOK_SCALE = 0.0025f;    // radians per mouse count
 constexpr f32 PITCH_LIMIT = 1.55334f;  // just under pi/2
-constexpr f32 GRAVITY = 15.0f;          // downward acceleration, deliberately floaty
 constexpr f32 JUMP_VELOCITY = 6.76f;    // launch speed; the apex lands at 1.52m
 constexpr f32 WALK_SPEED = 4.41f;       // ground speed while aiming down the sights
 constexpr f32 CROUCH_SPEED = 2.03f;     // ground speed while crouched and slow
