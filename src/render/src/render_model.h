@@ -82,9 +82,10 @@ struct SceneGlobals {
     f32 sun_dir[4];
     u32 shadow_tex;
     u32 pad[3];
+    f32 cam_pos[4];  ///< Eye position; lets shading resolve a normal's facing.
 };
 
-static_assert(sizeof(SceneGlobals) == 96, "SceneGlobals must match the shader layout");
+static_assert(sizeof(SceneGlobals) == 112, "SceneGlobals must match the shader layout");
 
 /// Indirect command slices per frame: the camera pass and the sun shadow pass
 /// cull independently, so each model carries two command runs per frame slot.
