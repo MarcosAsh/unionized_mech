@@ -786,6 +786,37 @@ static void test_a_team_can_still_wreck_the_mech() {
     ASSERT(survived_whole_fight <= 2);
 }
 
+// Bots have to go and find each other. Roaming at random, contact was an
+// accident on a 160m map and a match took 217s. Hunting puts it at 135s.
+static void test_bots_find_each_other() {
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    ASSERT(load_level(arena, MAP_PATH).is_ok());
+
+    for (u32 seed = 0; seed < 4; ++seed) {
+        World w{};
+        init_match(w);
+        w.seed = 0x4d454348u + seed * 0x9e3779b9u;
+        w.chars[0].x = 2000.0f;  // the player sits this one out
+        w.chars[0].z = 2000.0f;
+        u32 decided = 0;
+        for (u32 i = 0; i < 20000; ++i) {
+            InputCmd c{};
+            c.tick = TickId{i};
+            World next{};
+            simulate(w, c, next);
+            w = next;
+            if (w.winner != 0) {
+                decided = i;
+                break;
+            }
+        }
+        // Hunting lands every seed in 7.5k-9.2k ticks; random roaming averaged
+        // 13k. Anything past 11k means they have stopped looking.
+        ASSERT(decided > 0);
+        ASSERT(decided < 11000);
+    }
+}
+
 // Every waypoint in the shipping map has to be reachable from both team spawns.
 // Bots path by waypoint, so a wall dropped between two nodes silently strands
 // them somewhere they cannot route out of. Level geometry changes land here.
@@ -939,6 +970,8 @@ static void test_lurch_costs_speed_when_turning_back() {
     ASSERT(inside > 1.0f);
 }
 
+
+
 int main() {
     // Every movement test below runs against the shipping level, so geometry
     // the game plays and geometry the tests assert on cannot drift apart. The
@@ -970,6 +1003,7 @@ int main() {
     test_crouch_drops_off_wall();
     test_merging_beats_fighting_on_foot();
     test_a_team_can_still_wreck_the_mech();
+    test_bots_find_each_other();
     test_map_nav_fully_connected();
     core::log_info("sim_tests: all passed");
     return 0;

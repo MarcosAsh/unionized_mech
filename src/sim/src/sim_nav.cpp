@@ -82,6 +82,8 @@ void nav_build_links() {
 
 u32 nav_count() { return node_count; }
 
+u32 nav_nearest_node(f32 x, f32 y, f32 z) { return nearest_node(x, y, z); }
+
 bool nav_next_hop(f32 x, f32 y, f32 z, u32 goal, f32* out_x, f32* out_y, f32* out_z) {
     if (goal >= node_count) {
         return false;

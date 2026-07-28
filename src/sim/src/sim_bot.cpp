@@ -139,13 +139,33 @@ InputCmd bot_think(const World& prev, u32 index) {
         cmd.buttons |= static_cast<u16>(Button::Reload);
     }
 
-    // No enemy: walk the waypoint graph toward a periodically re-rolled goal
-    // node. Maps without a graph fall back to beelining between roam points.
+    // Nobody in sight: go and find someone. A waypoint rolled at random made
+    // contact an accident on a map this size. Bots know where to walk, not where
+    // to aim — the aim above still only works off what they can see.
+    i32 hunt = -1;
+    f32 hunt_d2 = 1e30f;
+    for (u32 j = 0; j < MAX_PLAYERS; ++j) {
+        const Character& other = prev.chars[j];
+        if (j == index || other.alive == 0 || other.team == me.team) {
+            continue;
+        }
+        const f32 dx = other.x - me.x;
+        const f32 dz = other.z - me.z;
+        const f32 d2 = dx * dx + dz * dz;
+        if (d2 < hunt_d2) {
+            hunt_d2 = d2;
+            hunt = static_cast<i32>(j);
+        }
+    }
+
     f32 gx = 0.0f;
     f32 gz = 0.0f;
     bool climb_hint = false;
     if (nav_count() > 0) {
-        const u32 goal_node = mix(prev.seed, prev.tick.raw / 600, index) % nav_count();
+        const u32 goal_node =
+            hunt >= 0 ? nav_nearest_node(prev.chars[hunt].x, prev.chars[hunt].y,
+                                         prev.chars[hunt].z)
+                      : mix(prev.seed, prev.tick.raw / 600, index) % nav_count();
         f32 hy = 0.0f;
         if (!nav_next_hop(me.x, me.y, me.z, goal_node, &gx, &hy, &gz)) {
             return cmd;  // marooned off the graph; hold position

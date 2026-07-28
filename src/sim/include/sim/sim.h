@@ -249,6 +249,11 @@ struct Spawn {
 /// The number of bot waypoint nodes in the loaded map's navigation graph.
 [[nodiscard]] u32 nav_count();
 
+/// The waypoint node nearest (x, y, z). Zero when the graph is empty, so check
+/// nav_count first. Height counts for more than distance, so a node on this
+/// floor beats a closer one on a ledge overhead.
+[[nodiscard]] u32 nav_nearest_node(f32 x, f32 y, f32 z);
+
 /// The next waypoint on the shortest path from (x, y, z) to node `goal`,
 /// written to the out parameters. Returns false when the graph has no route
 /// from here (or `goal` is out of range).
