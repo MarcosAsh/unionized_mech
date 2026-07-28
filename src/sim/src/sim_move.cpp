@@ -308,6 +308,9 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
             jumped = true;
         }
     } else if (wallrunning) {
+        // Wall contact gives the air jump back. Safe to do every tick only
+        // because the wall jump below spends the face outright: without that,
+        // one tick of contact per refill is a ladder anyone can climb.
         c.air_jumps = MAX_AIR_JUMPS;
         if (jump_pressed) {
             // Off the wall, plus whatever the stick is asking for, so a wall
@@ -317,6 +320,13 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
             c.vz += wall_nz * WALLJUMP_PUSH + wish_z * WALLJUMP_INPUT;
             jump_buffer = 0;
             jumped = true;
+            // Launching off a face spends it outright, however much of its run
+            // was left. Otherwise a jump costs only the single tick of contact
+            // that set it up, and mashing the button against one wall is a
+            // ladder: each press is worth another 5.84 m/s upward. Spending it
+            // is also what points the tech at the map, since the way to keep
+            // going up is to reach the next face rather than to hold this one.
+            wall_ticks = WALLRUN_MAX_TICKS;
         }
     } else if (climbing) {
         c.air_jumps = MAX_AIR_JUMPS;

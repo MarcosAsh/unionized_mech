@@ -619,6 +619,40 @@ static void test_facing_wall_grants_a_fresh_run() {
     ASSERT(after > 60);
 }
 
+// Touching a wall gives the air jump back once, not once per tick of contact.
+// Held down, jump is the crudest input there is, and it used to be a ladder:
+// one tick of wall contact refilled the air jump, so a character could climb
+// any wall in the game by mashing it. Nothing is being done well here — that is
+// the point, since an exploit nobody has to be skilled to run is the one that
+// matters.
+static void test_mashing_jump_cannot_climb_a_wall() {
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    load_wall_map(arena, ONE_WALL);
+
+    World w = on_the_wall();
+    const f32 start_y = w.player().y;
+    f32 max_y = start_y;
+    for (u32 i = 0; i < 600; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.move_x = -1;  // at yaw 0 this holds the character against the face
+        if (i % 2 == 0) {
+            c.buttons = static_cast<u16>(Button::Jump);  // mashed, so every press is an edge
+        }
+        World next{};
+        simulate(w, c, next);
+        w = next;
+        if (w.player().y > max_y) {
+            max_y = w.player().y;
+        }
+    }
+    // One wall jump and one air jump is all the wall owes: about 2.7m of lift.
+    // A single wall jump is all one face owes: about 1.14m of lift.
+    ASSERT(max_y - start_y < 3.0f);
+    // And 600 ticks of mashing ends back at the bottom of the wall, not up it.
+    ASSERT(w.player().y < 3.0f);
+}
+
 // Crouching lets go of a wall. Same start, same wall, the only difference is
 // the button, so nothing else can account for the wallrun never happening.
 static void test_crouch_drops_off_wall() {
@@ -827,6 +861,7 @@ int main() {
     test_wallrun_timer_ends_the_run();
     test_wall_jump_cannot_hold_one_wall();
     test_facing_wall_grants_a_fresh_run();
+    test_mashing_jump_cannot_climb_a_wall();
     test_crouch_drops_off_wall();
     test_map_nav_fully_connected();
     core::log_info("sim_tests: all passed");
