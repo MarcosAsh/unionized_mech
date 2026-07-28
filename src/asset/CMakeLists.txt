@@ -4,6 +4,8 @@
 FetchContent_MakeAvailable(cgltf stb)
 
 add_library(asset STATIC
+    src/asset_bounds.cpp
+    src/asset_image.cpp
     src/asset_import.cpp
     src/asset_io.cpp
     src/asset_skin.cpp

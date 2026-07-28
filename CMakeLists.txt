@@ -70,7 +70,12 @@ add_executable(core_tests tests/core_tests.cpp)
 target_link_libraries(core_tests PRIVATE core)
 add_test(NAME core_tests COMMAND core_tests)
 
-add_executable(sim_tests tests/sim_tests.cpp)
+add_executable(sim_tests
+    tests/sim_tests.cpp
+    tests/sim_tests_combat.cpp
+    tests/sim_tests_map.cpp
+    tests/sim_tests_move.cpp)
+target_include_directories(sim_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 target_link_libraries(sim_tests PRIVATE sim)
 target_compile_definitions(sim_tests PRIVATE "${UM_MAP_DEFINE}")
 add_test(NAME sim_tests COMMAND sim_tests)
