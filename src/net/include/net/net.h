@@ -122,4 +122,18 @@ private:
     bool have_acked_ = false;
 };
 
+/// Encode `current` as a difference from `baseline`, both `size` bytes, into
+/// `out`. Returns the bytes written, or 0 when it does not fit — which is a
+/// real outcome, not an error: when too much has changed the caller has to send
+/// against an older baseline or drop the update, and silently truncating would
+/// corrupt the far end's copy. `size` must be a multiple of four.
+[[nodiscard]] u32 delta_encode(const void* baseline, const void* current, u32 size, u8* out,
+                               u32 out_capacity);
+
+/// Rebuild `out` from `baseline` and an encoded delta. False when the delta is
+/// truncated, has trailing bytes, or was encoded against a different struct
+/// size; in all three cases `out` must not be used.
+[[nodiscard]] bool delta_decode(const void* baseline, const u8* in, u32 in_size, void* out,
+                                u32 size);
+
 }  // namespace net

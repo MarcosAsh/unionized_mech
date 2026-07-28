@@ -6,6 +6,8 @@
 #include "core/types.h"
 #include "net/net.h"
 
+#include <cstdlib>
+
 using namespace net;
 
 // Plain comparison of sequence numbers breaks at the wrap, which at 60Hz
@@ -180,6 +182,109 @@ static void test_oversized_send_refused() {
     ASSERT(!s.send(Address::loopback(s.port()), big, sizeof(big)));
 }
 
+
+// A stand-in for a snapshot: big enough that the mask matters, and a multiple
+// of four like the real structs are. net knows nothing about sim, so the tests
+// do not either.
+struct Snapshot {
+    u32 words[400];
+};
+
+static void fill(Snapshot* s, u32 seed) {
+    u32 x = seed;
+    for (u32 i = 0; i < 400; ++i) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        s->words[i] = x;
+    }
+}
+
+// The whole point: encode against a baseline, rebuild from the same baseline,
+// get the original back exactly.
+static void test_delta_round_trips() {
+    Snapshot base;
+    Snapshot cur;
+    fill(&base, 1);
+    fill(&cur, 1);
+    // Change a scattered handful, the way a few moving players would.
+    cur.words[0] = 0xAAAAAAAAu;
+    cur.words[37] = 0;
+    cur.words[200] = 0x12345678u;
+    cur.words[399] = 0xFFFFFFFFu;
+
+    static u8 buf[4096];
+    const u32 n = delta_encode(&base, &cur, sizeof(Snapshot), buf, sizeof(buf));
+    ASSERT(n > 0);
+    // Four changed words plus the count and the mask, nowhere near the 1600
+    // bytes the snapshot itself would cost.
+    ASSERT(n == sizeof(u16) + 50 + 4 * 4);
+
+    Snapshot out;
+    ASSERT(delta_decode(&base, buf, n, &out, sizeof(Snapshot)));
+    for (u32 i = 0; i < 400; ++i) {
+        ASSERT(out.words[i] == cur.words[i]);
+    }
+}
+
+// A state that did not move costs the mask and nothing else.
+static void test_identical_delta_is_empty() {
+    Snapshot base;
+    fill(&base, 7);
+    static u8 buf[4096];
+    const u32 n = delta_encode(&base, &base, sizeof(Snapshot), buf, sizeof(buf));
+    ASSERT(n == sizeof(u16) + 50);
+    Snapshot out;
+    ASSERT(delta_decode(&base, buf, n, &out, sizeof(Snapshot)));
+    for (u32 i = 0; i < 400; ++i) {
+        ASSERT(out.words[i] == base.words[i]);
+    }
+}
+
+// A delta that does not fit must say so rather than truncate: a short packet
+// applied over a baseline would corrupt the far end's copy silently, and it
+// would stay corrupt because every later delta builds on it.
+static void test_encode_refuses_to_truncate() {
+    Snapshot base;
+    Snapshot cur;
+    fill(&base, 3);
+    fill(&cur, 9);  // every word differs
+    static u8 small[256];
+    ASSERT(delta_encode(&base, &cur, sizeof(Snapshot), small, sizeof(small)) == 0);
+}
+
+// A damaged or mismatched delta is rejected, never half-applied.
+static void test_decode_rejects_bad_input() {
+    Snapshot base;
+    Snapshot cur;
+    fill(&base, 11);
+    fill(&cur, 11);
+    cur.words[5] = 1234;
+    cur.words[300] = 5678;
+
+    static u8 buf[4096];
+    const u32 n = delta_encode(&base, &cur, sizeof(Snapshot), buf, sizeof(buf));
+    ASSERT(n > 0);
+    Snapshot out;
+
+    // Truncated: the mask promises words the packet does not carry. The copy
+    // is sized to exactly the truncated length and heap-allocated, so a decoder
+    // that reads past the end is a heap overflow the debug preset's sanitizer
+    // reports. Decoding out of a generous fixed buffer would hide that.
+    u8* exact = static_cast<u8*>(std::malloc(n - 4));
+    ASSERT(exact != nullptr);
+    __builtin_memcpy(exact, buf, n - 4);
+    ASSERT(!delta_decode(&base, exact, n - 4, &out, sizeof(Snapshot)));
+    std::free(exact);
+    // Trailing bytes mean the two ends disagree about the format.
+    buf[n] = 0;
+    ASSERT(!delta_decode(&base, buf, n + 1, &out, sizeof(Snapshot)));
+    // Encoded against a struct of a different size.
+    ASSERT(!delta_decode(&base, buf, n, &out, sizeof(Snapshot) - 4));
+    // Nothing at all.
+    ASSERT(!delta_decode(&base, buf, 1, &out, sizeof(Snapshot)));
+}
+
 int main() {
     test_sequence_wraps();
     test_sequences_increment();
@@ -188,6 +293,10 @@ int main() {
     test_ack_window_has_an_edge();
     test_loopback_round_trip();
     test_oversized_send_refused();
+    test_delta_round_trips();
+    test_identical_delta_is_empty();
+    test_encode_refuses_to_truncate();
+    test_decode_rejects_bad_input();
     core::log_info("net_tests: all passed");
     return 0;
 }

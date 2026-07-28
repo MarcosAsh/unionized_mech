@@ -1,5 +1,6 @@
 add_library(net STATIC
     src/net_connection.cpp
+    src/net_delta.cpp
     src/net_socket.cpp)
 
 # net depends only on core. It knows nothing about the simulation it will carry,
