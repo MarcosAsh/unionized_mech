@@ -30,6 +30,13 @@ public:
     /// interpolated between the `prev` and `curr` snapshots by `alpha` in [0, 1].
     void draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr, f32 alpha);
 
+    /// Spot the one-tick events the scene has to remember for longer than a
+    /// tick, currently grenade detonations. Called once per simulated tick
+    /// alongside the audio, not once per frame: several ticks can run between
+    /// frames, and a blast that lit and died inside one of the earlier ones
+    /// would never be drawn.
+    void note_events(const sim::World& before, const sim::World& after);
+
     /// Rebuild the pipeline if either compiled shader changed on disk. Cheap to
     /// call every frame; it only rebuilds when a SPIR-V file's timestamp moves.
     void maybe_reload();
@@ -96,6 +103,19 @@ private:
     /// Eased wallrun bank per character, in radians. Presentation state the sim
     /// does not carry, so it lives for exactly as long as the scene does.
     f32 trooper_bank_[sim::MAX_PLAYERS] = {};
+
+    /// A fireball, kept alive for its own short lifetime after the grenade that
+    /// made it has gone. Aged in ticks off the world clock rather than in
+    /// seconds off the frame clock, so it needs no frame delta and survives a
+    /// stall the same way the simulation does.
+    struct Blast {
+        f32 x = 0.0f;
+        f32 y = 0.0f;
+        f32 z = 0.0f;
+        u32 tick = 0;
+        bool live = false;
+    };
+    Blast blasts_[sim::MAX_GRENADES] = {};
 };
 
 }  // namespace render

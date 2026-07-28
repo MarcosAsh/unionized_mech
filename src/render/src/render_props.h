@@ -97,6 +97,13 @@ void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);
 /// Four diagonal hit-marker ticks around the screen centre, camera space.
 [[nodiscard]] RenderModel make_hitmarker(gpu::Renderer& gpu, u32 fallback_texture);
 
+/// A thrown grenade: a small dark unit sphere, scaled at queue time.
+[[nodiscard]] RenderModel make_grenade(gpu::Renderer& gpu, u32 fallback_texture);
+
+/// The fireball a grenade leaves: an over-bright unit sphere, expanded at queue
+/// time over the life of the blast.
+[[nodiscard]] RenderModel make_blast(gpu::Renderer& gpu, u32 fallback_texture);
+
 /// A full-screen quad in NDC for the overlay pass, tinted at queue time.
 [[nodiscard]] RenderModel make_overlay_quad(gpu::Renderer& gpu, u32 fallback_texture);
 

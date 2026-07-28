@@ -113,6 +113,14 @@ struct Model {
 /// loose texture files so they can be converted offline like everything else.
 /// # Errors
 /// A static message when the file is missing or is not a decodable image.
+/// Write tightly packed RGBA8 pixels to `path` as a PNG. Used by the frame
+/// capture path, so a change to how the game looks can be looked at.
+/// # Errors
+/// A static message when the file cannot be written.
+[[nodiscard]] core::Result<core::Unit, const char*> image_write_png(const char* path,
+                                                                    const u8* rgba, u32 width,
+                                                                    u32 height);
+
 [[nodiscard]] core::Result<TextureData, const char*> image_import(core::Arena& arena,
                                                                   const char* path);
 

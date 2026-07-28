@@ -6,6 +6,8 @@
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
 #include <stb_image.h>
+#include <stb_image_write.h>

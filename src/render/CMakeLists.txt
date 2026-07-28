@@ -14,6 +14,7 @@ add_shaders(SCENE_SPV SOURCES
 add_custom_target(scene_shaders DEPENDS ${SCENE_SPV})
 
 add_library(render STATIC
+    src/render_fx.cpp
     src/render_model.cpp
     src/render_props.cpp
     src/render_pipeline.cpp

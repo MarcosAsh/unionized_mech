@@ -1,3 +1,4 @@
+#include "asset/asset.h"
 #include "core/arena.h"
 #include "core/assert.h"
 #include "core/file.h"
@@ -18,6 +19,13 @@ constexpr bool ENABLE_VALIDATION =
 #else
     true;
 #endif
+
+// Optional second argument: where to write a PNG of the last rendered frame.
+// Paired with a frame cap it gives a scripted run that leaves a picture behind,
+// which is the only way to check how the game looks without sitting at it.
+const char* parse_capture_path(int argc, char** argv) {
+    return argc >= 3 ? argv[2] : nullptr;
+}
 
 // Optional first argument: a frame cap for a short automated run. Zero means run
 // interactively until the user quits.
@@ -72,6 +80,19 @@ void audio_events(platform::Audio& audio, const sim::World& before, const sim::W
     if (before.mech.alive != 0 && after.mech.alive == 0) {
         audio.play(platform::Sound::Boom, 1.0f);
     }
+    // Grenades, heard from wherever they went off rather than at full volume
+    // across the map.
+    for (u32 i = 0; i < sim::MAX_GRENADES; ++i) {
+        if (before.grenades[i].active == 0 || after.grenades[i].active != 0) {
+            continue;
+        }
+        const f32 dx = before.grenades[i].x - me.x;
+        const f32 dz = before.grenades[i].z - me.z;
+        const f32 d2 = dx * dx + dz * dz;
+        if (d2 < 80.0f * 80.0f) {
+            audio.play(platform::Sound::Boom, (1.0f - __builtin_sqrtf(d2) / 80.0f) * 0.9f);
+        }
+    }
     if (before.player().alive != 0 && me.alive == 0) {
         audio.play(platform::Sound::Death, 0.9f);
     } else if (me.health < before.player().health) {
@@ -89,6 +110,7 @@ void audio_events(platform::Audio& audio, const sim::World& before, const sim::W
 // the render interpolating between them by the leftover-time alpha.
 int main(int argc, char** argv) {
     const u64 frame_cap = parse_frame_cap(argc, argv);
+    const char* capture_path = parse_capture_path(argc, argv);
     const bool interactive = frame_cap == 0;
 
     core::Arena permanent = core::Arena::with_capacity(64ull << 20);
@@ -189,14 +211,32 @@ int main(int argc, char** argv) {
             sim::World next{};
             sim::simulate(curr_world, cmd, next);
             audio_events(audio, curr_world, next);
+            scene.note_events(curr_world, next);
             curr_world = next;
             ++total_ticks;
         }
 
+        // Capture the frame the run ends on, once the world has had time to
+        // move: an image of the first frame is an image of the spawn screen.
+        const bool last_frame = frame_cap > 0 && frames + 1 >= frame_cap;
+        if (capture_path != nullptr && last_frame) {
+            renderer.request_capture();
+        }
         const gpu::Frame gpu_frame = renderer.begin_frame(win.width(), win.height());
         if (gpu_frame.valid) {
             scene.draw(gpu_frame, prev_world, curr_world, timestep.alpha());
             renderer.end_frame();
+        }
+        if (capture_path != nullptr && last_frame && renderer.capture_pixels() != nullptr) {
+            const core::Result<core::Unit, const char*> wrote = asset::image_write_png(
+                capture_path, renderer.capture_pixels(), renderer.capture_width(),
+                renderer.capture_height());
+            if (wrote.is_err()) {
+                core::log_errorf("capture: %s", wrote.error());
+            } else {
+                core::log_infof("capture: wrote %s (%ux%u)", capture_path,
+                                renderer.capture_width(), renderer.capture_height());
+            }
         }
 
         audio.update();

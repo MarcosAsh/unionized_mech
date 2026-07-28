@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "gpu/gpu.h"
 #include "gpu_barrier.h"
 #include "gpu_swapchain.h"
@@ -108,7 +109,10 @@ bool Renderer::recreate_swapchain(u32 width, u32 height) {
     ci.imageColorSpace = format.colorSpace;
     ci.imageExtent = extent;
     ci.imageArrayLayers = 1;
-    ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    // TRANSFER_SRC so a finished frame can be copied back for capture. Every
+    // implementation that supports presenting supports this, and it costs
+    // nothing on frames that are not captured.
+    ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -175,6 +179,13 @@ Renderer::~Renderer() {
     }
     const VkDevice dev = device_->handle();
     vkDeviceWaitIdle(dev);  // shutdown, not the frame loop
+
+    if (capture_buffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(dev, capture_buffer_, nullptr);
+        capture_buffer_ = VK_NULL_HANDLE;
+    }
+    std::free(capture_rgba_);
+    capture_rgba_ = nullptr;
 
     for (u32 i = 0; i < owned_as_count_; ++i) {
         vkDestroyAccelerationStructureKHR(dev, owned_as_[i], nullptr);

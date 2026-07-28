@@ -18,6 +18,15 @@ namespace {
 /// front of it.
 constexpr f32 SKY_COLOR[3] = {0.45f, 0.62f, 0.85f};
 
+/// A thrown grenade, in metres. The sim treats it as a point, so this is purely
+/// how big it looks.
+constexpr f32 GRENADE_RADIUS = 0.11f;
+
+/// The fireball. Its radius is the sim's own 5m blast, so what you see is what
+/// hurt you, and it lasts a third of a second.
+constexpr f32 BLAST_FX_RADIUS = 5.0f;
+constexpr u32 BLAST_FX_TICKS = 20;
+
 /// Resting vertical field of view in radians: 70 degrees, the pilot value.
 constexpr f32 BASE_FOV = 1.2217f;
 
@@ -104,6 +113,22 @@ void queue_beam(RenderModel& model, u32 slot, const core::Vec3& origin, const co
 
 }  // namespace
 
+void Scene::note_events(const sim::World& before, const sim::World& after) {
+    // A grenade that was live and is not any more went off where it last was:
+    // the sim clears the slot in the same tick it applies the damage, so `after`
+    // no longer knows where it happened.
+    for (u32 i = 0; i < sim::MAX_GRENADES; ++i) {
+        if (before.grenades[i].active == 0 || after.grenades[i].active != 0) {
+            continue;
+        }
+        blasts_[i].x = before.grenades[i].x;
+        blasts_[i].y = before.grenades[i].y;
+        blasts_[i].z = before.grenades[i].z;
+        blasts_[i].tick = after.tick.raw;
+        blasts_[i].live = true;
+    }
+}
+
 void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::World& curr,
                  f32 alpha) {
     const f32 cam_x = lerp(prev.player().x, curr.player().x, alpha);
@@ -179,6 +204,29 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
                                                           std::sin(half), std::cos(half));
         model_queue(models_->duck, frame.slot, spot.pos, rot, spot.scale);
     }
+    // Grenades in flight, and the fireballs left by the ones that have gone off.
+    for (const sim::Grenade& g : curr.grenades) {
+        if (g.active != 0) {
+            model_queue(models_->grenade, frame.slot, core::Vec3{g.x, g.y, g.z}, core::Quat{},
+                        GRENADE_RADIUS);
+        }
+    }
+    for (const Blast& b : blasts_) {
+        if (!b.live) {
+            continue;
+        }
+        const u32 age = curr.tick.raw - b.tick;
+        if (age >= BLAST_FX_TICKS) {
+            continue;
+        }
+        // Punches out fast and then eases, which is what an explosion looks
+        // like; a fireball that grows at a constant rate reads as a balloon.
+        const f32 t = static_cast<f32>(age) / static_cast<f32>(BLAST_FX_TICKS);
+        const f32 grow = 1.0f - (1.0f - t) * (1.0f - t);
+        model_queue(models_->blast, frame.slot, core::Vec3{b.x, b.y, b.z}, core::Quat{},
+                    BLAST_FX_RADIUS * (0.25f + 0.75f * grow));
+    }
+
     // Everyone else in the match, tinted by team.
     constexpr f32 TEAM_TINTS[2][4] = {{0.30f, 0.50f, 1.00f, 1.0f}, {1.00f, 0.42f, 0.22f, 1.0f}};
 

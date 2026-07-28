@@ -43,7 +43,7 @@ add_subdirectory(src/render)
 set(UM_MAP_DEFINE "MAP_PATH=\"${CMAKE_SOURCE_DIR}/maps/skyline.umap\"")
 
 add_executable(unionized_mech src/main.cpp tools/sanitizer_suppressions.cpp)
-target_link_libraries(unionized_mech PRIVATE platform gpu render)
+target_link_libraries(unionized_mech PRIVATE platform gpu render asset)
 target_compile_definitions(unionized_mech PRIVATE "${UM_MAP_DEFINE}")
 
 # Headless determinism runner: steps the sim and prints the world hash.

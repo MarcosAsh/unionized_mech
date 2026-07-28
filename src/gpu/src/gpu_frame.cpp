@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "gpu/gpu.h"
 #include "gpu_barrier.h"
 #include "gpu_swapchain.h"
@@ -99,12 +100,54 @@ Frame Renderer::begin_frame(u32 width, u32 height) {
 void Renderer::end_frame() {
     const VkCommandBuffer cmd = cmds_[cur_slot_];
 
-    submit_barrier(cmd, image_barrier(images_[cur_image_], VK_IMAGE_ASPECT_COLOR_BIT,
-                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                      VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0));
+    // A requested capture copies the finished image out on its way to being
+    // presented, so what lands on disk is exactly what was shown.
+    const bool capturing = capture_wanted_;
+    if (capturing) {
+        const u64 needed = static_cast<u64>(extent_.width) * extent_.height * 4;
+        if (capture_capacity_ < needed) {
+            if (capture_buffer_ != VK_NULL_HANDLE) {
+                vkQueueWaitIdle(device_->graphics_queue());
+                vkDestroyBuffer(device_->handle(), capture_buffer_, nullptr);
+            }
+            Allocation alloc{};
+            capture_buffer_ =
+                create_buffer(device_->handle(), allocator_, needed,
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                              &alloc);
+            capture_mapped_ = alloc.mapped;
+            capture_capacity_ = needed;
+        }
+        submit_barrier(cmd, image_barrier(images_[cur_image_], VK_IMAGE_ASPECT_COLOR_BIT,
+                                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                          VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                          VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                          VK_PIPELINE_STAGE_2_COPY_BIT,
+                                          VK_ACCESS_2_TRANSFER_READ_BIT));
+        VkBufferImageCopy region{};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.layerCount = 1;
+        region.imageExtent = {extent_.width, extent_.height, 1};
+        vkCmdCopyImageToBuffer(cmd, images_[cur_image_],
+                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, capture_buffer_, 1,
+                               &region);
+        submit_barrier(cmd, image_barrier(images_[cur_image_], VK_IMAGE_ASPECT_COLOR_BIT,
+                                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                          VK_PIPELINE_STAGE_2_COPY_BIT,
+                                          VK_ACCESS_2_TRANSFER_READ_BIT,
+                                          VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0));
+    } else {
+        submit_barrier(cmd, image_barrier(images_[cur_image_], VK_IMAGE_ASPECT_COLOR_BIT,
+                                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                          VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                          VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                          VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0));
+    }
 
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, timestamp_pool_,
                          cur_slot_ * 2 + 1);
@@ -150,11 +193,38 @@ void Renderer::end_frame() {
 
     frame_counter_ = cur_submit_;
 
+    if (capturing) {
+        finish_capture();
+    }
+
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) {
         recreate_swapchain(cur_w_, cur_h_);
         return;
     }
     ASSERT_MSG(presented == VK_SUCCESS, "vkQueuePresentKHR");
+}
+
+void Renderer::finish_capture() {
+    // Debug path, so waiting the queue out is fine and keeps this simple.
+    vkQueueWaitIdle(device_->graphics_queue());
+    capture_w_ = extent_.width;
+    capture_h_ = extent_.height;
+    const u64 pixels = static_cast<u64>(capture_w_) * capture_h_;
+    if (capture_rgba_ == nullptr) {
+        capture_rgba_ = static_cast<u8*>(std::malloc(pixels * 4));
+        ASSERT(capture_rgba_ != nullptr);
+    }
+    const u8* src = static_cast<const u8*>(capture_mapped_);
+    // Swapchain formats on this path are BGRA; PNG wants RGBA. Alpha is forced
+    // opaque because the presented image's alpha is not meaningful.
+    const bool bgra = format_ == VK_FORMAT_B8G8R8A8_SRGB || format_ == VK_FORMAT_B8G8R8A8_UNORM;
+    for (u64 i = 0; i < pixels; ++i) {
+        capture_rgba_[i * 4 + 0] = bgra ? src[i * 4 + 2] : src[i * 4 + 0];
+        capture_rgba_[i * 4 + 1] = src[i * 4 + 1];
+        capture_rgba_[i * 4 + 2] = bgra ? src[i * 4 + 0] : src[i * 4 + 2];
+        capture_rgba_[i * 4 + 3] = 255;
+    }
+    capture_wanted_ = false;
 }
 
 void Renderer::render_clear(f32 r, f32 g, f32 b, u32 width, u32 height) {

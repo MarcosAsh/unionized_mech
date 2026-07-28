@@ -21,6 +21,8 @@ struct SceneModels {
     RenderModel mech;
     RenderModel tracer;
     RenderModel tracer_vm;
+    RenderModel grenade;
+    RenderModel blast;
     RenderModel hitmarker;
     RenderModel overlay;
     gpu::Blas level_blas;

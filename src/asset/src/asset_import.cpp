@@ -5,6 +5,7 @@
 
 #include <cgltf.h>
 #include <stb_image.h>
+#include <stb_image_write.h>
 
 #include <cstring>
 
@@ -334,6 +335,16 @@ bool load_image(core::Arena& arena, const cgltf_image* image, const char* gltf_p
 }
 
 }  // namespace
+
+core::Result<core::Unit, const char*> image_write_png(const char* path, const u8* rgba,
+                                                      u32 width, u32 height) {
+    const int stride = static_cast<int>(width) * 4;
+    if (stbi_write_png(path, static_cast<int>(width), static_cast<int>(height), 4, rgba,
+                       stride) == 0) {
+        return core::Result<core::Unit, const char*>::err("image_write_png: write failed");
+    }
+    return core::Result<core::Unit, const char*>::ok(core::Unit{});
+}
 
 core::Result<TextureData, const char*> image_import(core::Arena& arena, const char* path) {
     using ImageResult = core::Result<TextureData, const char*>;

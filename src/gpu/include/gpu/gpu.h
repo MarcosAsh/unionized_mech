@@ -272,6 +272,17 @@ public:
 
     [[nodiscard]] VkDevice device_handle() const;
     [[nodiscard]] VkFormat color_format() const { return format_; }
+
+    /// Ask for the next presented frame to be read back to the CPU. A debug and
+    /// test path, not a frame-loop one: it blocks on the queue to do it. This
+    /// exists so a change to how the game looks can be checked by looking at it.
+    void request_capture() { capture_wanted_ = true; }
+
+    /// The frame read back by the last request, as tightly packed RGBA8. Null
+    /// until a requested capture has landed; valid until the next request.
+    [[nodiscard]] const u8* capture_pixels() const { return capture_rgba_; }
+    [[nodiscard]] u32 capture_width() const { return capture_w_; }
+    [[nodiscard]] u32 capture_height() const { return capture_h_; }
     [[nodiscard]] VkFormat depth_format() const { return DEPTH_FORMAT; }
     [[nodiscard]] VkDescriptorSetLayout bindless_layout() const { return bindless_layout_; }
     [[nodiscard]] VkDescriptorSet bindless_set() const { return bindless_set_; }
@@ -366,6 +377,17 @@ private:
     u32 owned_count_ = 0;
 
     u32 cur_image_ = 0;
+
+    /// Frame capture. The staging buffer and the CPU copy are allocated on the
+    /// first request and reused, so repeated captures cost one allocation.
+    bool capture_wanted_ = false;
+    VkBuffer capture_buffer_ = VK_NULL_HANDLE;
+    void* capture_mapped_ = nullptr;
+    u64 capture_capacity_ = 0;
+    u8* capture_rgba_ = nullptr;
+    u32 capture_w_ = 0;
+    u32 capture_h_ = 0;
+    void finish_capture();
     u32 cur_slot_ = 0;
     u64 cur_submit_ = 0;
     u32 cur_w_ = 0;

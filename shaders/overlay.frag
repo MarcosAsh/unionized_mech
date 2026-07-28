@@ -21,6 +21,11 @@ layout(location = 1) in vec2 frag_uv;
 layout(location = 2) flat in vec4 frag_color;
 layout(location = 3) flat in uint frag_tex;
 layout(location = 4) in vec3 frag_world;
+// Unused here: the overlay is unlit. They are declared anyway because this pass
+// shares mesh.vert, and a vertex output with no matching fragment input is a
+// validation message.
+layout(location = 5) flat in float frag_metallic;
+layout(location = 6) flat in float frag_roughness;
 layout(location = 0) out vec4 out_color;
 
 void main() {
