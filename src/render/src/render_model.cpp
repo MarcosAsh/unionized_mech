@@ -9,6 +9,22 @@
 
 namespace render {
 
+namespace {
+
+/// How far a tinted material is lifted off its own albedo before the tint is
+/// applied. Straight multiplication cannot tint black: the character art is
+/// near-black tactical gear, so team colour multiplied into it stayed black and
+/// both teams read as silhouettes. Lifting first means a dark material still
+/// takes the team's colour while a bright one is barely touched.
+constexpr f32 TINT_LIFT = 0.55f;
+
+[[nodiscard]] f32 tinted_channel(f32 albedo, f32 tint) {
+    return (TINT_LIFT + (1.0f - TINT_LIFT) * albedo) * tint;
+}
+
+}  // namespace
+
+
 RenderModel model_load(gpu::Renderer& gpu, core::Arena& scratch, const char* base,
                        u32 fallback_texture) {
     RenderModel model;
@@ -147,7 +163,7 @@ void queue_records(RenderModel& model, u32 slot, core::Vec3 pos, core::Quat rot,
         rec.rot[2] = rot.z;
         rec.rot[3] = rot.w;
         for (u32 c = 0; c < 4; ++c) {
-            rec.color[c] = tint != nullptr ? sub.color[c] * tint[c] : sub.color[c];
+            rec.color[c] = tint != nullptr ? tinted_channel(sub.color[c], tint[c]) : sub.color[c];
         }
         for (u32 c = 0; c < 3; ++c) {
             rec.bounds_min[c] = sub.bounds_min[c];
@@ -195,7 +211,7 @@ void model_queue_glyph(RenderModel& model, u32 slot, core::Vec3 pos, core::Vec3 
     rec.rot[2] = 0.0f;
     rec.rot[3] = 1.0f;
     for (u32 c = 0; c < 4; ++c) {
-        rec.color[c] = sub.color[c] * tint[c];
+        rec.color[c] = tinted_channel(sub.color[c], tint[c]);
     }
     for (u32 c = 0; c < 3; ++c) {
         rec.bounds_min[c] = sub.bounds_min[c];
