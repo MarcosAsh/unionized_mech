@@ -33,6 +33,7 @@ FetchContent_MakeAvailable(VulkanHeaders)
 add_subdirectory(src/core)
 add_subdirectory(src/sim)
 add_subdirectory(src/anim)
+add_subdirectory(src/net)
 add_subdirectory(src/asset)
 add_subdirectory(src/platform)
 add_subdirectory(src/gpu)
@@ -84,6 +85,10 @@ add_test(NAME asset_tests COMMAND asset_tests)
 add_executable(anim_tests tests/anim_tests.cpp)
 target_link_libraries(anim_tests PRIVATE anim)
 add_test(NAME anim_tests COMMAND anim_tests)
+
+add_executable(net_tests tests/net_tests.cpp)
+target_link_libraries(net_tests PRIVATE net)
+add_test(NAME net_tests COMMAND net_tests)
 
 # Still to land in M0:
 #   gpu swapchain, frame contexts, allocator, bindless set (next: clear + present)
