@@ -150,6 +150,10 @@ constexpr u32 WIN_KILLS = 30;
 /// The mech's pilot slot value while nobody is merged with it.
 constexpr u8 NO_PILOT = 0xFF;
 
+/// Chassis health. Read with MECH_ARMOUR_PERCENT, which is what most of the
+/// durability actually is; see the note there.
+constexpr i16 MECH_HEALTH = 450;
+
 /// The big chassis at the arena centre that either side's robots can union
 /// with: walk close, press use, and your processes migrate in. Packed for
 /// byte-wise hashing like Character.
@@ -161,7 +165,7 @@ struct Mech {
     f32 vx = 0.0f;
     f32 vy = 0.0f;
     f32 vz = 0.0f;
-    i16 health = 300;
+    i16 health = MECH_HEALTH;
     u16 respawn_ticks = 0;  ///< Rebuild countdown while destroyed.
     u8 pilot = NO_PILOT;    ///< Character index of the merged robot.
     u8 alive = 1;

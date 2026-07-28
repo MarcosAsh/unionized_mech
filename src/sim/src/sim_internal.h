@@ -14,6 +14,11 @@ constexpr f32 MECH_EYE = 3.9f;
 constexpr u16 MECH_REBUILD_TICKS = 1800;  // thirty seconds
 constexpr u16 RESPAWN_TICKS = 180;        // three seconds
 
+/// Percent of a hit that gets through the chassis armour. The chassis is ten
+/// times a pilot's area to shoot at, and health alone pays for that only by
+/// making a bullet sponge. Integer percent keeps damage exact.
+constexpr i32 MECH_ARMOUR_PERCENT = 55;
+
 /// Downward acceleration, deliberately floaty. Shared: characters, the chassis,
 /// and thrown grenades all fall at the same rate, and a second copy of this
 /// number would let them quietly disagree.

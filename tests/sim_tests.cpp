@@ -681,6 +681,111 @@ static void test_crouch_drops_off_wall() {
     ASSERT(without > 60);  // the control run really does hold the wall
 }
 
+// One scripted fight: slot 0 against `enemies` bots on a 25m ring around the
+// chassis, tracking the nearest one with perfect aim and holding the trigger.
+// Merging on the first tick is the only difference between the two loadouts,
+// so anything the results differ by is the loadout.
+struct FightResult {
+    u32 lasted = 0;
+    u32 kills = 0;
+};
+
+static FightResult scripted_fight(bool merge, u32 enemies, u32 seed) {
+    World w{};
+    init_match(w);
+    w.seed = 0x4d454348u + seed * 0x9e3779b9u;
+    for (u32 i = 1; i < MAX_PLAYERS; ++i) {
+        w.chars[i].x = 900.0f;  // allies parked out of the fight
+        w.chars[i].z = 900.0f;
+        w.chars[i].team = 0;
+    }
+    for (u32 e = 0; e < enemies; ++e) {
+        Character& c = w.chars[5 + e];
+        c.team = 1;
+        const f32 a = 6.2831853f * static_cast<f32>(e) / static_cast<f32>(enemies);
+        c.x = 25.0f * std::sin(a);
+        c.z = 25.0f * std::cos(a);
+    }
+    // Within merge range of the chassis, which stands at the origin.
+    w.chars[0].x = 0.0f;
+    w.chars[0].y = 0.0f;
+    w.chars[0].z = 3.0f;
+
+    for (u32 i = 0; i < 1200; ++i) {
+        InputCmd c{};
+        c.tick = TickId{i};
+        c.buttons = static_cast<u16>(merge && i == 0 ? Button::Use : Button::Fire);
+
+        const Character& me = w.player();
+        const f32 eye = me.merged != 0 ? 3.9f : 1.7f;
+        f32 best = 1e9f;
+        f32 yaw = me.yaw;
+        f32 pitch = me.pitch;
+        for (u32 j = 5; j < 5 + enemies; ++j) {
+            const Character& t = w.chars[j];
+            if (t.alive == 0) {
+                continue;
+            }
+            const f32 dx = t.x - me.x;
+            const f32 dy = (t.y + 0.9f) - (me.y + eye);
+            const f32 dz = t.z - me.z;
+            const f32 d = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < best) {
+                best = d;
+                yaw = std::atan2(dx, -dz);
+                pitch = std::asin(dy / d);
+            }
+        }
+        f32 dyaw = yaw - me.yaw;
+        while (dyaw > 3.14159265f) dyaw -= 6.2831853f;
+        while (dyaw < -3.14159265f) dyaw += 6.2831853f;
+        c.look_dx = static_cast<i16>(dyaw / 0.0025f);
+        c.look_dy = static_cast<i16>((pitch - me.pitch) / 0.0025f);
+
+        World next{};
+        simulate(w, c, next);
+        w = next;
+        if (merge ? w.mech.alive == 0 : w.player().alive == 0) {
+            return FightResult{i, w.player().kills};
+        }
+    }
+    return FightResult{1200, w.player().kills};
+}
+
+// Merging has to be worth doing — it is the game's title mechanic and it used to
+// be the losing option. The chassis is ten times a pilot's area to shoot at, so
+// unarmoured it died in 54 ticks against four enemies where a pilot lasted 762.
+// Eight seeds a side, so one unlucky bot cannot decide it.
+static void test_merging_beats_fighting_on_foot() {
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    ASSERT(load_level(arena, MAP_PATH).is_ok());
+
+    u32 foot_kills = 0;
+    u32 mech_kills = 0;
+    for (u32 seed = 0; seed < 8; ++seed) {
+        foot_kills += scripted_fight(false, 3, seed).kills;
+        mech_kills += scripted_fight(true, 3, seed).kills;
+    }
+    // Comfortably ahead, not marginally: 93 against 41 when this was written,
+    // and 24 against 41 with the armour removed.
+    ASSERT(mech_kills > foot_kills + foot_kills / 2);
+}
+
+// The other half of the same balance: a chassis a whole team cannot remove is
+// its own problem. Focused by five, it dies inside the window.
+static void test_a_team_can_still_wreck_the_mech() {
+    core::Arena arena = core::Arena::with_capacity(1u << 20);
+    ASSERT(load_level(arena, MAP_PATH).is_ok());
+
+    u32 survived_whole_fight = 0;
+    for (u32 seed = 0; seed < 8; ++seed) {
+        if (scripted_fight(true, 5, seed).lasted >= 1200) {
+            ++survived_whole_fight;
+        }
+    }
+    ASSERT(survived_whole_fight <= 2);
+}
+
 // Every waypoint in the shipping map has to be reachable from both team spawns.
 // Bots path by waypoint, so a wall dropped between two nodes silently strands
 // them somewhere they cannot route out of. Level geometry changes land here.
@@ -863,6 +968,8 @@ int main() {
     test_facing_wall_grants_a_fresh_run();
     test_mashing_jump_cannot_climb_a_wall();
     test_crouch_drops_off_wall();
+    test_merging_beats_fighting_on_foot();
+    test_a_team_can_still_wreck_the_mech();
     test_map_nav_fully_connected();
     core::log_info("sim_tests: all passed");
     return 0;

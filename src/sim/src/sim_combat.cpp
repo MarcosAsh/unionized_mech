@@ -96,9 +96,11 @@ void apply_damage(World& next, u32 attacker, u32 target_index, i16 damage) {
     }
     target.hurt_age = 0;
     if (target.merged != 0) {
-        // Damage to a merged robot lands on the chassis. Its pilot evacuates
-        // intact when the chassis dies; wrecking it scores.
-        next.mech.health = static_cast<i16>(next.mech.health - damage);
+        // Damage to a merged robot lands on the chassis, less what the armour
+        // turns away. Rounded up so no hit ever does nothing at all. The pilot
+        // evacuates intact when the chassis dies; wrecking it scores.
+        const i32 through = (static_cast<i32>(damage) * MECH_ARMOUR_PERCENT + 99) / 100;
+        next.mech.health = static_cast<i16>(next.mech.health - static_cast<i16>(through));
         if (next.mech.health <= 0) {
             next.mech.alive = 0;
             next.mech.respawn_ticks = MECH_REBUILD_TICKS;
