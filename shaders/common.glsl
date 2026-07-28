@@ -52,7 +52,7 @@ const float AMBIENT_STRENGTH = 0.35;
 // old shading was tuned around.
 const float SUN_RADIANCE = 2.04;
 
-const float FOG_DENSITY = 0.0055;
+const float FOG_DENSITY = 0.0038;
 
 const float PI = 3.14159265359;
 
@@ -98,6 +98,46 @@ vec3 fresnel_schlick(vec3 f0, float cos_theta) {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+/// Narkowicz's ACES fit. The GGX lobe puts real energy above 1.0 where the old
+/// Blinn-Phong never did, and clipping that to white flattens every highlight
+/// into the same paper shape. EXPOSURE keeps mid grey where the lighting was
+/// already tuned, so this adds the shoulder without moving the whole image.
+/// The swapchain is _SRGB, so the hardware does the gamma encode after this.
+const float EXPOSURE = 0.85;
+
+vec3 tonemap(vec3 c) {
+    c *= EXPOSURE;
+    const float a = 2.51;
+    const float b = 0.03;
+    const float d = 2.43;
+    const float e = 0.59;
+    const float f = 0.14;
+    return clamp((c * (a * c + b)) / (c * (d * c + e) + f), 0.0, 1.0);
+}
+
+/// The sky looking along `dir`. A flat clear colour gives no horizon and no
+/// sense of which way is up; this deepens toward the zenith, pales toward the
+/// horizon, and carries a broad glow around the sun. `sky_color` stays the
+/// midpoint the ambient term and the fog are both tuned around.
+const float SKY_ZENITH_SCALE = 0.58;   // deeper overhead
+const float SKY_HORIZON_SCALE = 1.24;  // paler and hazier at eye level
+const float SUN_GLOW = 0.35;
+
+vec3 sky_toward(Globals g, vec3 dir) {
+    vec3 base = g.sky_color.rgb;
+    // Curved rather than linear in height, so the gradient concentrates near
+    // the horizon where the eye reads it and stays flat overhead.
+    float up = clamp(dir.y, 0.0, 1.0);
+    float t = 1.0 - pow(1.0 - up, 3.0);
+    vec3 col = base * mix(SKY_HORIZON_SCALE, SKY_ZENITH_SCALE, t);
+    // Below the horizon the sky is ground haze, not sky, so it stops getting
+    // paler and settles instead.
+    col = mix(base * SKY_HORIZON_SCALE, col, step(0.0, dir.y));
+    float sun = max(dot(normalize(dir), g.sun_dir.xyz), 0.0);
+    col += vec3(1.0, 0.85, 0.6) * pow(sun, 8.0) * SUN_GLOW;
+    return tonemap(col);
+}
+
 /// One opaque surface, lit by a Cook-Torrance GGX lobe from the sun plus a
 /// hemisphere ambient. `n` must be normalized and `shadow` is 1 in full light,
 /// 0 in full shade. Metals take their reflection colour from the albedo and
@@ -138,10 +178,13 @@ vec3 shade(Globals g, vec3 albedo, float metallic, float roughness, vec3 n, vec3
     vec3 ambient_fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - ndv, 5.0);
     lit += ambient_fresnel * irradiance * (1.0 - roughness * 0.7);
 
-    // Distance fog toward the sky colour, so the flat clear colour reads as
-    // atmosphere rather than a void and distance becomes legible.
+    // Distance fog toward the sky colour, so distance becomes legible. It is
+    // applied *after* the tonemap, not before: fog is a blend toward the sky as
+    // displayed, and tonemapping it again would land distant geometry on a
+    // different colour from the sky drawn behind it, leaving a seam at the
+    // horizon.
     float fog = 1.0 - exp(-length(g.cam_pos.xyz - world) * FOG_DENSITY);
-    return mix(lit, g.sky_color.rgb, fog);
+    return mix(tonemap(lit), sky_toward(g, -to_eye), fog);
 }
 
 #endif  // COMMON_GLSL

@@ -10,7 +10,9 @@ add_shaders(SCENE_SPV SOURCES
     ${CMAKE_SOURCE_DIR}/shaders/shadow_mesh.vert
     ${CMAKE_SOURCE_DIR}/shaders/scene_rt.frag
     ${CMAKE_SOURCE_DIR}/shaders/mesh_rt.frag
-    ${CMAKE_SOURCE_DIR}/shaders/overlay.frag)
+    ${CMAKE_SOURCE_DIR}/shaders/overlay.frag
+    ${CMAKE_SOURCE_DIR}/shaders/sky.vert
+    ${CMAKE_SOURCE_DIR}/shaders/sky.frag)
 add_custom_target(scene_shaders DEPENDS ${SCENE_SPV})
 
 add_library(render STATIC

@@ -75,6 +75,8 @@ private:
     VkPipelineLayout shadow_level_layout_ = VK_NULL_HANDLE;
     VkPipeline shadow_mesh_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout shadow_mesh_layout_ = VK_NULL_HANDLE;
+    VkPipeline sky_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout sky_layout_ = VK_NULL_HANDLE;
     VkPipeline overlay_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout overlay_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;

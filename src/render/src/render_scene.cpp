@@ -646,6 +646,35 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     scissor.extent = frame.extent;
     vkCmdSetScissor(frame.cmd, 0, 1, &scissor);
 
+    // Sky first: it covers every pixel, so the level and everything after it
+    // draw over whatever it leaves behind and the clear colour never shows.
+    {
+        Vec3 cam_right;
+        Vec3 cam_up;
+        Vec3 cam_fwd;
+        camera_basis(yaw, pitch, cur_roll_, &cam_right, &cam_up, &cam_fwd);
+        const f32 tan_half = std::tan(cur_fov_ * 0.5f);
+        SkyPush sky{};
+        sky.ray_right[0] = cam_right.x * tan_half * aspect;
+        sky.ray_right[1] = cam_right.y * tan_half * aspect;
+        sky.ray_right[2] = cam_right.z * tan_half * aspect;
+        sky.ray_up[0] = cam_up.x * tan_half;
+        sky.ray_up[1] = cam_up.y * tan_half;
+        sky.ray_up[2] = cam_up.z * tan_half;
+        sky.ray_forward[0] = cam_fwd.x;
+        sky.ray_forward[1] = cam_fwd.y;
+        sky.ray_forward[2] = cam_fwd.z;
+        sky.globals = models_->globals.bindless_index;
+        sky.gslot = frame.slot;
+        vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sky_pipeline_);
+        vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sky_layout_, 0, 1,
+                                &bindless_set_, 0, nullptr);
+        vkCmdPushConstants(frame.cmd, sky_layout_,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(SkyPush), &sky);
+        vkCmdDraw(frame.cmd, 3, 1, 0, 0);
+    }
+
     vkCmdBindPipeline(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
     vkCmdBindDescriptorSets(frame.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1,
                             &bindless_set_, 0, nullptr);

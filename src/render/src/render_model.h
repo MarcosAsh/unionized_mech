@@ -75,6 +75,17 @@ struct MeshPush {
     u32 gslot;
 };
 
+/// Push constants of the sky pass, matching shaders/sky.vert and sky.frag. The
+/// camera axes arrive pre-scaled by the field of view so the fragment shader
+/// rebuilds a view ray with one add per axis and no matrix inverse.
+struct SkyPush {
+    f32 ray_right[4];
+    f32 ray_up[4];
+    f32 ray_forward[4];
+    u32 globals;
+    u32 gslot;
+};
+
 /// Push constants of the shadow mesh pass, matching shaders/shadow_mesh.vert.
 struct ShadowMeshPush {
     f32 sun_view_proj[16];

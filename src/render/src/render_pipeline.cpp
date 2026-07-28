@@ -282,6 +282,12 @@ void Scene::build_pipelines() {
     build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
                    SHADER_DIR "/mesh.vert.spv", SHADER_DIR "/overlay.frag.spv",
                    sizeof(MeshPush), true, &overlay_pipeline_, &overlay_layout_);
+    // The sky reuses the depth-less overlay setup: it is drawn first and covers
+    // the screen, so it needs no depth test, and blending an opaque colour is a
+    // plain write.
+    build_pipeline(device_, color_format_, depth_format_, bindless_layout_,
+                   SHADER_DIR "/sky.vert.spv", SHADER_DIR "/sky.frag.spv", sizeof(SkyPush),
+                   true, &sky_pipeline_, &sky_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/cull.comp.spv", sizeof(CullPush),
                   &cull_pipeline_, &cull_layout_);
     build_compute(device_, bindless_layout_, SHADER_DIR "/skin.comp.spv", sizeof(SkinPush),
@@ -309,6 +315,8 @@ void Scene::destroy_pipelines() {
     vkDestroyPipelineLayout(device_, shadow_mesh_layout_, nullptr);
     vkDestroyPipeline(device_, overlay_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, overlay_layout_, nullptr);
+    vkDestroyPipeline(device_, sky_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, sky_layout_, nullptr);
 }
 
 }  // namespace render

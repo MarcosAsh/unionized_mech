@@ -110,7 +110,11 @@ struct Frustum {
 /// First-person view matrix from a position, yaw/pitch, and a roll (for wallrun
 /// camera tilt), matching the sim's convention: yaw 0 faces -Z, positive pitch
 /// looks up.
-[[nodiscard]] inline Mat4 view_fps(f32 px, f32 py, f32 pz, f32 yaw, f32 pitch, f32 roll) {
+/// The camera's world-space axes for a first-person view. Shared with the sky
+/// pass, which needs the same basis to build its view rays; a second copy of
+/// this would drift the sky away from the camera the moment either is retuned.
+inline void camera_basis(f32 yaw, f32 pitch, f32 roll, Vec3* out_right, Vec3* out_up,
+                         Vec3* out_forward) {
     const f32 cp = std::cos(pitch);
     const f32 sp = std::sin(pitch);
     const f32 cy = std::cos(yaw);
@@ -128,6 +132,16 @@ struct Frustum {
         up = up * cr - right * sr;
         right = new_right;
     }
+    *out_right = right;
+    *out_up = up;
+    *out_forward = forward;
+}
+
+[[nodiscard]] inline Mat4 view_fps(f32 px, f32 py, f32 pz, f32 yaw, f32 pitch, f32 roll) {
+    Vec3 right;
+    Vec3 up;
+    Vec3 forward;
+    camera_basis(yaw, pitch, roll, &right, &up, &forward);
 
     const Vec3 pos{px, py, pz};
     Mat4 out;
