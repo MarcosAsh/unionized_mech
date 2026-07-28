@@ -296,6 +296,12 @@ void simulate(const World& prev, const InputCmd& cmd, World& next);
 /// merged, so the rule for what carries ammunition lives in one place.
 [[nodiscard]] u16 weapon_mag(const Character& c);
 
+/// How far through a reload `c` is: 0 at the start, 1 as it completes, and 0
+/// when not reloading. Presentation asks through here rather than dividing by a
+/// duration it would need its own copy of, which is how the speed cues drifted
+/// from the movement tuning once already.
+[[nodiscard]] f32 reload_phase(const Character& c);
+
 /// The determinism harness's input sequence for `tick`, built from integer
 /// arithmetic only so it is identical on every platform. The button schedules
 /// are coprime, so a run drifts through combinations rather than repeating one

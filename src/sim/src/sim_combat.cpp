@@ -119,6 +119,22 @@ void apply_damage(World& next, u32 attacker, u32 target_index, i16 damage) {
 
 u16 weapon_mag(const Character& c) { return held_weapon(c).mag; }
 
+f32 reload_phase(const Character& c) {
+    if (c.reload_ticks == 0) {
+        return 0.0f;
+    }
+    // Which of the two durations is running can be read off the magazine: it is
+    // not refilled until the reload completes, so a magazine still empty means
+    // this is the longer reload from dry.
+    const Weapon& w = held_weapon(c);
+    const u16 total = c.ammo == 0 ? w.reload_empty_ticks : w.reload_ticks;
+    if (total == 0) {
+        return 0.0f;
+    }
+    const f32 left = static_cast<f32>(c.reload_ticks) / static_cast<f32>(total);
+    return 1.0f - (left > 1.0f ? 1.0f : left);
+}
+
 void rearm(Character& c) {
     const Weapon& w = weapon_def(c.weapon);
     c.ammo = w.mag;

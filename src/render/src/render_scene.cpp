@@ -39,6 +39,34 @@ constexpr f32 FOV_SPEED_SCALE = 0.1f;
 /// to sell the pose on its silhouette alone.
 constexpr f32 WALLRUN_BANK = 0.40f;
 
+/// The reload. The weapon art is a single rigid mesh with no skeleton, so the
+/// magazine cannot be animated on its own; the whole weapon is swung out of the
+/// aim instead, which is what the motion reads as anyway. Real arm art replaces
+/// this with a proper clip.
+constexpr f32 RELOAD_DROP = 0.11f;   ///< Metres the weapon falls out of the aim.
+constexpr f32 RELOAD_PULL = 0.06f;   ///< Metres it draws back toward the chest.
+constexpr f32 RELOAD_ROLL = 0.85f;   ///< Radians it rolls over, showing the magazine well.
+constexpr f32 RELOAD_PITCH = 0.30f;  ///< Radians the muzzle tips up.
+
+/// How far out of the aim the weapon is, `phase` of the way through a reload.
+/// It leaves fast, stays down while the magazine is swapped, and comes back
+/// under control; a symmetric curve reads like the gun is bobbing rather than
+/// being worked on.
+[[nodiscard]] f32 reload_swing(f32 phase) {
+    constexpr f32 OUT = 0.20f;   // down by here
+    constexpr f32 BACK = 0.72f;  // starts coming up here
+    if (phase < OUT) {
+        const f32 t = phase / OUT;
+        return t * t * (3.0f - 2.0f * t);
+    }
+    if (phase < BACK) {
+        return 1.0f;
+    }
+    const f32 t = (phase - BACK) / (1.0f - BACK);
+    const f32 eased = t * t * (3.0f - 2.0f * t);
+    return 1.0f - eased;
+}
+
 /// How far the viewmodel swings while wallrunning, in metres across and down.
 /// The gun is bolted to the view, so a wallrun would otherwise be the one big
 /// movement the player's own hands sit out.
@@ -404,13 +432,24 @@ void Scene::draw(const gpu::Frame& frame, const sim::World& prev, const sim::Wor
     // Wallrunning swings the weapon toward the wall and drops it, the pilot's
     // half of the lean the camera is already doing.
     const f32 vm_half = cur_vm_lean_ * WALLRUN_BANK * 0.5f;
-    const core::Quat vm_rot = core::Quat::from_axis_half(core::Vec3{0.0f, 0.0f, 1.0f},
-                                                         std::sin(vm_half), std::cos(vm_half));
+    const core::Quat lean_rot = core::Quat::from_axis_half(core::Vec3{0.0f, 0.0f, 1.0f},
+                                                           std::sin(vm_half), std::cos(vm_half));
+    // Reload: swing the weapon down and roll it over, so the hands are visibly
+    // busy for exactly as long as the simulation says the magazine takes.
+    const f32 swing = reload_swing(sim::reload_phase(curr.player()));
+    const f32 roll_half = swing * RELOAD_ROLL * 0.5f;
+    const f32 pitch_half = swing * RELOAD_PITCH * 0.5f;
+    const core::Quat reload_roll = core::Quat::from_axis_half(
+        core::Vec3{0.0f, 0.0f, 1.0f}, std::sin(roll_half), std::cos(roll_half));
+    const core::Quat reload_pitch = core::Quat::from_axis_half(
+        core::Vec3{1.0f, 0.0f, 0.0f}, std::sin(pitch_half), std::cos(pitch_half));
+    const core::Quat vm_rot = lean_rot * reload_roll * reload_pitch;
     model_queue(models_->gun, frame.slot,
                 core::Vec3{0.17f + cur_vm_lean_ * WALLRUN_VM_SHIFT,
                            -0.14f - (cur_vm_lean_ < 0.0f ? -cur_vm_lean_ : cur_vm_lean_) *
-                                        WALLRUN_VM_SHIFT,
-                           -0.45f + kick},
+                                        WALLRUN_VM_SHIFT -
+                               swing * RELOAD_DROP,
+                           -0.45f + kick + swing * RELOAD_PULL},
                 vm_rot, 0.6f);
     model_queue(models_->viewmodel, frame.slot, core::Vec3{}, core::Quat{}, 1.0f);
     if (curr.player().shot_hit != 0 && curr.player().shot_age < 8) {

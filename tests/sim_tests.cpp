@@ -817,6 +817,53 @@ static void test_bots_find_each_other() {
     }
 }
 
+// The reload readout the viewmodel animates from. Its one subtlety is telling
+// the two reload durations apart: the magazine is not refilled until the reload
+// completes, so a magazine still empty means the longer reload from dry is what
+// is running. Getting that wrong makes the animation finish early or late.
+static void test_reload_phase_runs_start_to_finish() {
+    World w{};
+    init_match(w);
+    Character& c = w.chars[0];
+    ASSERT(reload_phase(c) == 0.0f);  // not reloading
+
+    // Empty the magazine, then pull the trigger, which forces a reload.
+    c.ammo = 0;
+    InputCmd fire{};
+    fire.buttons = static_cast<u16>(Button::Fire);
+    World next{};
+    simulate(w, fire, next);
+    w = next;
+    ASSERT(w.player().reload_ticks > 0);
+
+    // The animation has to start when the reload does. Reading the wrong one of
+    // the two durations leaves the phase pinned at zero for the first stretch,
+    // which looks like the weapon hanging still and then hurrying.
+    for (u32 i = 0; i < 10; ++i) {
+        World n{};
+        simulate(w, InputCmd{}, n);
+        w = n;
+    }
+    ASSERT(reload_phase(w.player()) > 0.02f);
+
+    // It climbs from near zero to one and never runs backwards.
+    f32 last = -1.0f;
+    u32 steps = 0;
+    while (w.player().reload_ticks > 0 && steps < 600) {
+        const f32 phase = reload_phase(w.player());
+        ASSERT(phase >= 0.0f && phase <= 1.0f);
+        ASSERT(phase >= last);
+        last = phase;
+        World n{};
+        simulate(w, InputCmd{}, n);
+        w = n;
+        ++steps;
+    }
+    ASSERT(last > 0.9f);              // it got most of the way there
+    ASSERT(reload_phase(w.player()) == 0.0f);  // and stops once the reload lands
+    ASSERT(w.player().ammo > 0);
+}
+
 // Every waypoint in the shipping map has to be reachable from both team spawns.
 // Bots path by waypoint, so a wall dropped between two nodes silently strands
 // them somewhere they cannot route out of. Level geometry changes land here.
@@ -1003,6 +1050,7 @@ int main() {
     test_crouch_drops_off_wall();
     test_merging_beats_fighting_on_foot();
     test_a_team_can_still_wreck_the_mech();
+    test_reload_phase_runs_start_to_finish();
     test_bots_find_each_other();
     test_map_nav_fully_connected();
     core::log_info("sim_tests: all passed");
