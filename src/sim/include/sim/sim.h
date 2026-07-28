@@ -104,7 +104,7 @@ struct Character {
     f32 shot_z = 0.0f;
     f32 shot_yaw = 0.0f;     ///< Fire-time aim of the last shot.
     f32 shot_pitch = 0.0f;
-    u16 wallrun_ticks = 0;   ///< Ticks spent on the current wall.
+    u16 wallrun_ticks = 0;   ///< Ticks spent on the latched wall, kept across brief drops.
     u16 respawn_ticks = 0;   ///< Ticks until respawn while dead.
     u16 kills = 0;
     u16 reload_ticks = 0;    ///< Ticks left in a reload, 0 when not reloading.
@@ -134,9 +134,9 @@ struct Character {
     u8 lurch_ticks = 0;      ///< Ticks into the post-jump lurch window; 0 is disarmed.
     i8 last_move_x = 0;      ///< Previous tick's stick, so a press can be told from a hold.
     i8 last_move_y = 0;
+    i8 wall_latch_nx = 0;    ///< Outward normal of the wall the run timer belongs to.
+    i8 wall_latch_nz = 0;    ///< Zero when the character owes no wall any time.
     u8 pad0 = 0;
-    u8 pad1 = 0;
-    u8 pad2 = 0;
 };
 
 static_assert(sizeof(Character) == 108, "Character layout must stay packed for hashing");

@@ -1,3 +1,4 @@
+#include "sim_collide.h"
 #include "sim_internal.h"
 #include "sim_level.h"
 #include "sim_math.h"
@@ -61,20 +62,10 @@ constexpr f32 LURCH_MAX_LOSS = 0.5f;     // speed given up turning all the way a
 constexpr u8 COYOTE_TICKS = 6;       // jump still works ~100ms after a ledge
 constexpr u8 JUMP_BUFFER_TICKS = 8;  // press ~133ms early still fires on landing
 
-// Steps. Anything this low is walked straight over, no vault and no hop, so
-// kerbs and stair treads do not launch you.
-constexpr f32 STEP_HEIGHT = 0.457f;  // tallest ledge taken without a vault
-
-// Mantle. Moving into a ledge at chest height vaults it, keeping momentum.
-constexpr f32 MANTLE_REACH = 1.3f;   // highest ledge that can be vaulted
-constexpr f32 MANTLE_MARGIN = 0.5f;  // extra launch speed past the ledge lip
-
 // Ledge climb. Holding jump against a wall whose top is within reach pulls the
 // character up it, slower than a jump but sure.
 constexpr f32 CLIMB_REACH = 3.0f;  // wall top at most this far above the feet
 constexpr f32 CLIMB_SPEED = 3.5f;  // upward speed while climbing
-
-constexpr f32 LAND_IMPACT_DECAY = 0.85f;  // per-tick decay of the landing dip
 
 // Wallrun. Speed snaps up hard and the wall lets go of you gradually, which is
 // the signature this game is chasing.
@@ -88,17 +79,6 @@ constexpr u16 WALLRUN_GRAVITY_RAMP = 42;    // 0.7s to ease gravity back to full
 constexpr f32 WALLJUMP_UP = 5.84f;          // upward launch off the wall
 constexpr f32 WALLJUMP_PUSH = 5.21f;        // push away from the wall
 constexpr f32 WALLJUMP_INPUT = 2.03f;       // stick direction folded into the launch
-
-/// True when a hull of `height` at (x, y, z) is inside any of `boxes`. Used to
-/// check there is room before stepping up onto something.
-[[nodiscard]] bool hull_blocked(f32 x, f32 y, f32 z, f32 height, core::Span<const Aabb> boxes) {
-    for (u64 i = 0; i < boxes.size(); ++i) {
-        if (hull_overlaps(x, y, z, height, boxes[i])) {
-            return true;
-        }
-    }
-    return false;
-}
 
 }  // namespace
 
@@ -235,34 +215,66 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     f32 wall_top = 0.0f;
     const bool wall_found = !grounded && find_wall(c.x, c.y, c.z, hull_h, level_boxes(), &wall_nx,
                                                    &wall_nz, &wall_top);
+
+    // The run timer belongs to the *wall*, not to the contact. It carries
+    // through the ticks spent off a face, and only a different face or the floor
+    // hands it back. That is what makes the limit mean anything: it used to
+    // reset the moment contact was lost, so dropping off for a single tick
+    // refunded both the timer and the gravity ramp below, and one face would
+    // carry a character for as long as it cared to hold on.
+    i8 latch_nx = prev_c.wall_latch_nx;
+    i8 latch_nz = prev_c.wall_latch_nz;
+    u16 wall_ticks = prev_c.wallrun_ticks;
+
+    // Crouching lets go. A wall is something you hold onto, so releasing it
+    // wants a button of its own rather than only ever happening to you.
     bool wallrunning = false;
-    if (wall_found && prev_c.wallrun_ticks < WALLRUN_MAX_TICKS) {
-        const f32 into = c.vx * wall_nx + c.vz * wall_nz;
-        const f32 along_x = c.vx - into * wall_nx;
-        const f32 along_z = c.vz - into * wall_nz;
-        const f32 along = sim_sqrt(along_x * along_x + along_z * along_z);
-        if (along > WALLRUN_MIN_SPEED && into < 1.0f) {
-            wallrunning = true;
-            const f32 dir_x = along_x / along;
-            const f32 dir_z = along_z / along;
-            f32 new_along = along + WALLRUN_ACCEL * SIM_DT;
-            if (new_along > WALLRUN_MAX_SPEED) {
-                new_along = WALLRUN_MAX_SPEED;
+    if (wall_found && !ducked) {
+        // find_wall only ever reports axis-aligned normals, so a face is named
+        // by two bytes, and comparing them separates "the wall I have been
+        // running" from "a fresh one" without carrying a box index around. It
+        // cannot tell two faces that point the same way apart, which is a
+        // deliberate under-approximation: it refuses a little more than it has
+        // to, and never grants a run it should not.
+        const i8 face_nx = static_cast<i8>(wall_nx);
+        const i8 face_nz = static_cast<i8>(wall_nz);
+        if (face_nx != latch_nx || face_nz != latch_nz) {
+            // A wall this character was not already on is free to take, and
+            // starts a fresh run. Landing clears the latch too, so faces are
+            // always fresh again on the way out of a spawn.
+            latch_nx = face_nx;
+            latch_nz = face_nz;
+            wall_ticks = 0;
+        }
+        if (wall_ticks < WALLRUN_MAX_TICKS) {
+            const f32 into = c.vx * wall_nx + c.vz * wall_nz;
+            const f32 along_x = c.vx - into * wall_nx;
+            const f32 along_z = c.vz - into * wall_nz;
+            const f32 along = sim_sqrt(along_x * along_x + along_z * along_z);
+            if (along > WALLRUN_MIN_SPEED && into < 1.0f) {
+                wallrunning = true;
+                const f32 dir_x = along_x / along;
+                const f32 dir_z = along_z / along;
+                f32 new_along = along + WALLRUN_ACCEL * SIM_DT;
+                if (new_along > WALLRUN_MAX_SPEED) {
+                    new_along = WALLRUN_MAX_SPEED;
+                }
+                c.vx = dir_x * new_along - wall_nx * WALL_PULL;
+                c.vz = dir_z * new_along - wall_nz * WALL_PULL;
             }
-            c.vx = dir_x * new_along - wall_nx * WALL_PULL;
-            c.vz = dir_z * new_along - wall_nz * WALL_PULL;
         }
     }
 
     // Gravity eases in over the first stretch of a wallrun rather than sitting
     // at a flat reduced value. Entering sticks you to the wall; the longer you
-    // hang on, the more the wall gives you back to gravity.
+    // hang on, the more the wall gives you back to gravity. It reads the wall's
+    // own timer, so re-catching a face you have already been running does not
+    // hand the easy first stretch back.
     f32 gravity = GRAVITY;
     if (wallrunning) {
-        const u16 held = prev_c.wallrun_ticks;
-        gravity = held >= WALLRUN_GRAVITY_RAMP
+        gravity = wall_ticks >= WALLRUN_GRAVITY_RAMP
                       ? GRAVITY
-                      : GRAVITY * (static_cast<f32>(held) /
+                      : GRAVITY * (static_cast<f32>(wall_ticks) /
                                    static_cast<f32>(WALLRUN_GRAVITY_RAMP));
     }
     c.vy -= gravity * SIM_DT;
@@ -374,87 +386,7 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         }
     }
 
-    // Move and slide, one axis at a time, against the static boxes.
-    const core::Span<const Aabb> boxes = level_boxes();
-
-    c.x += c.vx * SIM_DT;
-    for (u64 i = 0; i < boxes.size(); ++i) {
-        const Aabb& b = boxes[i];
-        if (hull_overlaps(c.x, c.y, c.z, hull_h, b)) {
-            const f32 ledge = b.max_y - c.y;
-            // A low step is walked straight over, keeping speed, so long as
-            // there is room to stand up there. Taller ledges fall through to
-            // the mantle vault below.
-            if (grounded && ledge > 0.0f && ledge <= STEP_HEIGHT &&
-                !hull_blocked(c.x, b.max_y, c.z, hull_h, boxes)) {
-                c.y = b.max_y;
-                continue;
-            }
-            c.x = c.vx > 0.0f ? b.min_x - HULL_HALF_WIDTH : b.max_x + HULL_HALF_WIDTH;
-            if (ledge > 0.0f && ledge <= MANTLE_REACH) {
-                const f32 needed = sim_sqrt(2.0f * GRAVITY * ledge) + MANTLE_MARGIN;
-                if (c.vy < needed) {
-                    c.vy = needed;
-                }
-            } else {
-                c.vx = 0.0f;
-            }
-        }
-    }
-
-    c.z += c.vz * SIM_DT;
-    for (u64 i = 0; i < boxes.size(); ++i) {
-        const Aabb& b = boxes[i];
-        if (hull_overlaps(c.x, c.y, c.z, hull_h, b)) {
-            const f32 ledge = b.max_y - c.y;
-            if (grounded && ledge > 0.0f && ledge <= STEP_HEIGHT &&
-                !hull_blocked(c.x, b.max_y, c.z, hull_h, boxes)) {
-                c.y = b.max_y;
-                continue;
-            }
-            c.z = c.vz > 0.0f ? b.min_z - HULL_HALF_WIDTH : b.max_z + HULL_HALF_WIDTH;
-            if (ledge > 0.0f && ledge <= MANTLE_REACH) {
-                const f32 needed = sim_sqrt(2.0f * GRAVITY * ledge) + MANTLE_MARGIN;
-                if (c.vy < needed) {
-                    c.vy = needed;
-                }
-            } else {
-                c.vz = 0.0f;
-            }
-        }
-    }
-
-    // The landing dip eases back every tick and refills on impact.
-    c.land_impact = prev_c.land_impact * LAND_IMPACT_DECAY;
-
-    bool grounded_now = false;
-    c.y += c.vy * SIM_DT;
-    for (u64 i = 0; i < boxes.size(); ++i) {
-        const Aabb& b = boxes[i];
-        if (hull_overlaps(c.x, c.y, c.z, hull_h, b)) {
-            if (c.vy <= 0.0f) {
-                c.y = b.max_y;  // land on top
-                grounded_now = true;
-                if (prev_c.on_ground == 0 && -c.vy > c.land_impact) {
-                    c.land_impact = -c.vy;
-                }
-            } else {
-                c.y = b.min_y - hull_h;  // bumped head
-            }
-            c.vy = 0.0f;
-        }
-    }
-
-    if (c.y <= 0.0f) {
-        c.y = 0.0f;
-        if (c.vy < 0.0f) {
-            if (prev_c.on_ground == 0 && -c.vy > c.land_impact) {
-                c.land_impact = -c.vy;
-            }
-            c.vy = 0.0f;
-        }
-        grounded_now = true;
-    }
+    const bool grounded_now = move_and_slide(c, prev_c, hull_h, grounded);
     c.on_ground = grounded_now ? 1 : 0;
     c.ducked = ducked ? 1 : 0;
     // Landing closes the window; nothing else re-arms it but another jump.
@@ -462,8 +394,15 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
     c.last_move_x = cmd.move_x;
     c.last_move_y = cmd.move_y;
 
+    // Touching the floor forgets the wall entirely: every face is fresh again on
+    // the way back up. Short of that the latch and its timer persist, including
+    // through the ticks spent off the wall after a wall jump.
     const bool wallrun_active = wallrunning && !grounded_now;
-    c.wallrun_ticks = wallrun_active ? static_cast<u16>(prev_c.wallrun_ticks + 1) : 0;
+    c.wallrun_ticks = grounded_now
+                          ? static_cast<u16>(0)
+                          : (wallrun_active ? static_cast<u16>(wall_ticks + 1) : wall_ticks);
+    c.wall_latch_nx = grounded_now ? static_cast<i8>(0) : latch_nx;
+    c.wall_latch_nz = grounded_now ? static_cast<i8>(0) : latch_nz;
     c.wall_nx = wallrun_active ? wall_nx : 0.0f;
     c.wall_nz = wallrun_active ? wall_nz : 0.0f;
 
@@ -483,7 +422,7 @@ void step_character(Character& c, const Character& prev_c, const InputCmd& cmd) 
         f32 nx = 0.0f;
         f32 nz = 0.0f;
         f32 top = 0.0f;
-        if (find_wall(c.x, c.y, c.z, hull_h, boxes, &nx, &nz, &top)) {
+        if (find_wall(c.x, c.y, c.z, hull_h, level_boxes(), &nx, &nz, &top)) {
             c.wall_nx = nx;
             c.wall_nz = nz;
         }
