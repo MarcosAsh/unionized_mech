@@ -1,17 +1,7 @@
 # Game content, downloaded pinned by hash and converted to the native formats
-# by um_import at build time. Nothing here is committed. All CC0: the Khronos
-# sample Duck, Kenney's Blaster Kit (kenney.nl), the Quaternius Animated Robot
-# (quaternius.com, via poly.pizza), and a concrete surface from ambientCG.
-
-set(DUCK_URL
-    "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Binary/Duck.glb")
-set(DUCK_SHA256 "65bf938f54d6073e619e76e007820bbf980cdc3dc0daec0d94830ffc4ae54ab5")
-set(DUCK_GLB "${CMAKE_BINARY_DIR}/sample/Duck.glb")
-
-if(NOT EXISTS "${DUCK_GLB}")
-    message(STATUS "Downloading sample asset: Duck.glb")
-    file(DOWNLOAD "${DUCK_URL}" "${DUCK_GLB}" EXPECTED_HASH SHA256=${DUCK_SHA256})
-endif()
+# by um_import at build time. Nothing here is committed. All CC0: Kenney's
+# Blaster Kit (kenney.nl), the Quaternius Animated Robot (quaternius.com, via
+# poly.pizza), and a concrete surface from ambientCG.
 
 # The first-person weapon, from Kenney's CC0 Blaster Kit.
 set(BLASTER_URL
@@ -59,12 +49,6 @@ set(ASSET_DIR "${CMAKE_BINARY_DIR}/assets")
 file(MAKE_DIRECTORY "${ASSET_DIR}")
 
 add_custom_command(
-    OUTPUT "${ASSET_DIR}/duck.umesh"
-    COMMAND um_import "${DUCK_GLB}" "${ASSET_DIR}/duck"
-    DEPENDS um_import "${DUCK_GLB}"
-    COMMENT "um_import duck"
-    VERBATIM)
-add_custom_command(
     OUTPUT "${ASSET_DIR}/blaster.umesh"
     COMMAND um_import "${BLASTER_GLB}" "${ASSET_DIR}/blaster"
     DEPENDS um_import "${BLASTER_GLB}"
@@ -95,6 +79,6 @@ add_custom_command(
     COMMENT "um_import ground roughness"
     VERBATIM)
 add_custom_target(sample_assets
-    DEPENDS "${ASSET_DIR}/duck.umesh" "${ASSET_DIR}/blaster.umesh" "${ASSET_DIR}/robot.umesh"
+    DEPENDS "${ASSET_DIR}/blaster.umesh" "${ASSET_DIR}/robot.umesh"
             "${ASSET_DIR}/ground.utex" "${ASSET_DIR}/ground_normal.utex"
             "${ASSET_DIR}/ground_rough.utex")

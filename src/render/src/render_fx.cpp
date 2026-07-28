@@ -67,9 +67,10 @@ RenderModel make_grenade(gpu::Renderer& gpu, u32 fallback_texture) {
     u32 vc = 0;
     u32 ic = 0;
     add_mesh_sphere(verts, indices, &vc, &ic, 7, 12);
-    // Dark and matte: a live grenade reads by moving against the arena, and a
-    // bright one would be mistaken for a tracer.
-    const f32 color[3] = {0.16f, 0.19f, 0.13f};
+    // Light enough to read against the arena floor. The first cut was a
+    // realistic dark olive and was invisible in play: small, unlit on its shaded
+    // side, and the same value as the concrete it lands on.
+    const f32 color[3] = {0.62f, 0.66f, 0.30f};
     static asset::Submesh sub;
     sub = unit_ball_submesh(ic, color);
     sub.roughness = 0.7f;

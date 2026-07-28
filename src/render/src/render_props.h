@@ -50,19 +50,6 @@ struct TrooperRig {
 constexpr TrooperRig TROOPER_RIG = {0.99f, 3.14159265f, 0,     4,      {16, 19, 17, 18},
                                     "Wrist.R", 0.7f,    0.15f};
 
-/// Decorative duck placements on the plaza.
-struct DuckSpot {
-    core::Vec3 pos;
-    f32 yaw;
-    f32 scale;
-};
-
-constexpr DuckSpot DUCKS[3] = {
-    {{4.0f, 0.0f, 4.0f}, 0.6f, 1.5f},
-    {{-6.0f, 2.0f, 6.0f}, 2.4f, 1.0f},
-    {{2.0f, 0.0f, -9.0f}, -1.2f, 2.5f},
-};
-
 /// Build the level geometry: the floor and the visible collision boxes, with
 /// per-face normals and world-scaled texture coordinates.
 void build_level(core::Array<LevelVertex>& verts, core::Array<u32>& indices);

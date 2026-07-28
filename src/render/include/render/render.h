@@ -2,12 +2,14 @@
 
 #include "core/arena.h"
 #include "core/types.h"
+#include "core/vec.h"
 #include "gpu/gpu.h"
 #include "sim/sim.h"
 
 namespace render {
 
 struct SceneModels;
+struct TrooperPose;
 
 /// The scene pass. Owns the level geometry pipeline, a textured mesh pipeline,
 /// and the imported models, all drawn bindless through indirect calls. It
@@ -59,6 +61,20 @@ private:
                                       VkDescriptorSetLayout bindless_layout, const char* vert_spv,
                                       u32 push_bytes, VkPipeline* out_pipeline,
                                       VkPipelineLayout* out_layout);
+    /// Where the eye is this frame and how wide the screen is: everything the
+    /// queue phase needs from the camera that `draw` has already worked out.
+    struct FrameView {
+        core::Vec3 eye;
+        f32 aspect = 1.0f;
+    };
+
+    /// Write every model that will be drawn into this frame's record buffers.
+    /// Records nothing into a command buffer; that is the pass phase's job.
+    /// `out_poses` receives this frame's character poses, which the skinning
+    /// and acceleration-structure work after the queue phase still needs.
+    void queue_frame(const gpu::Frame& frame, const sim::World& curr, f32 alpha,
+                     const FrameView& view, TrooperPose* out_poses);
+
     void build_pipelines();
     void destroy_pipelines();
 

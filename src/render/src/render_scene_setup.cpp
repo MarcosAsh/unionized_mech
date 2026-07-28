@@ -72,8 +72,6 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
     *scene.models_ = SceneModels{};
     const u8 white[4] = {255, 255, 255, 255};
     scene.models_->white_texture = gpu.create_texture(white, 1, 1).bindless_index;
-    scene.models_->duck =
-        model_load(gpu, scratch, ASSET_DIR "/duck", scene.models_->white_texture);
     scene.models_->gun =
         model_load(gpu, scratch, ASSET_DIR "/blaster", scene.models_->white_texture);
     scene.models_->viewmodel = make_viewmodel(gpu, scene.models_->white_texture);
@@ -105,12 +103,6 @@ Scene Scene::create(gpu::Renderer& gpu, core::Arena& permanent, core::Arena& scr
             gpu.create_blas(scene.vertices_.handle, static_cast<u32>(verts.size()),
                             sizeof(LevelVertex), scene.indices_.handle,
                             static_cast<u32>(indices.size()));
-        if (scene.models_->duck.loaded) {
-            scene.models_->duck_blas = gpu.create_blas(
-                scene.models_->duck.vertices.handle, scene.models_->duck.total_vertices,
-                sizeof(asset::MeshVertex), scene.models_->duck.indices.handle,
-                scene.models_->duck.total_indices);
-        }
         scene.models_->trooper_blas = gpu.create_blas(
             scene.models_->trooper.base.vertices.handle,
             scene.models_->trooper.base.total_vertices, sizeof(asset::MeshVertex),
