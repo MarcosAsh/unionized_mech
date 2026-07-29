@@ -69,6 +69,14 @@ public:
     [[nodiscard]] const sim::World& world() const { return world_; }
     [[nodiscard]] u32 tick_count() const { return world_.tick.raw; }
 
+    /// The client tick last heard from `slot`, or NO_TICK if never. The server
+    /// keeps applying a client's last command until a newer one arrives, so
+    /// this is the only way to tell a player who is holding forward from one
+    /// who has stopped talking to us.
+    [[nodiscard]] u32 last_input(u32 slot) const {
+        return slot < sim::MAX_PLAYERS ? latest_tick_[slot] : NO_TICK;
+    }
+
 private:
     sim::World world_{};
     sim::World history_[HISTORY]{};  ///< Past states, indexed by tick % HISTORY.

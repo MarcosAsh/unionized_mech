@@ -1,4 +1,5 @@
 add_library(session STATIC
+    src/link.cpp
     src/session.cpp)
 
 # The one place sim and net meet: net carries bytes and knows nothing about the
