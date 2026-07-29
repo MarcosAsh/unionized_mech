@@ -9,7 +9,10 @@
 #include "platform/audio.h"
 #include "platform/platform.h"
 #include "render/render.h"
+#include "session/link.h"
 #include "sim/sim.h"
+
+#include <ctime>
 
 namespace {
 
@@ -20,27 +23,62 @@ constexpr bool ENABLE_VALIDATION =
     true;
 #endif
 
-// Optional second argument: where to write a PNG of the last rendered frame.
-// Paired with a frame cap it gives a scripted run that leaves a picture behind,
-// which is the only way to check how the game looks without sitting at it.
-const char* parse_capture_path(int argc, char** argv) {
-    return argc >= 3 ? argv[2] : nullptr;
-}
+/// How the binary was asked to run.
+///   unionized_mech                     play a local match against bots
+///   unionized_mech <frames> [out.png]  the same, capped, leaving a picture
+///   unionized_mech --server <port> [ticks]              headless authority
+///   unionized_mech --connect <port> [frames] [out.png]  play against it
+struct Options {
+    enum class Mode { Local, Server, Client };
+    Mode mode = Mode::Local;
+    u16 port = 27015;
+    u64 frame_cap = 0;
+    const char* capture = nullptr;
+};
 
-// Optional first argument: a frame cap for a short automated run. Zero means run
-// interactively until the user quits.
-u64 parse_frame_cap(int argc, char** argv) {
-    if (argc < 2) {
-        return 0;
-    }
+[[nodiscard]] u64 parse_u64(const char* text) {
     u64 value = 0;
-    for (const char* p = argv[1]; *p != '\0'; ++p) {
+    for (const char* p = text; *p != '\0'; ++p) {
         if (*p < '0' || *p > '9') {
             return 0;
         }
         value = value * 10u + static_cast<u64>(*p - '0');
     }
     return value;
+}
+
+[[nodiscard]] bool same(const char* a, const char* b) {
+    return __builtin_strcmp(a, b) == 0;
+}
+
+[[nodiscard]] Options parse_options(int argc, char** argv) {
+    Options o;
+    if (argc >= 2 && (same(argv[1], "--server") || same(argv[1], "--connect"))) {
+        o.mode = same(argv[1], "--server") ? Options::Mode::Server : Options::Mode::Client;
+        if (argc >= 3) {
+            const u64 port = parse_u64(argv[2]);
+            if (port > 0 && port < 65536) {
+                o.port = static_cast<u16>(port);
+            }
+        }
+        // The same cap and capture the local mode takes, shifted along by the
+        // mode and the port. Without it a scripted run never ends, which is
+        // exactly what a test harness cannot have.
+        if (argc >= 4) {
+            o.frame_cap = parse_u64(argv[3]);
+        }
+        if (argc >= 5) {
+            o.capture = argv[4];
+        }
+        return o;
+    }
+    if (argc >= 2) {
+        o.frame_cap = parse_u64(argv[1]);
+    }
+    if (argc >= 3) {
+        o.capture = argv[2];
+    }
+    return o;
 }
 
 // One tick's sound edges, read off the before/after sim states. A shot lands
@@ -108,12 +146,71 @@ void audio_events(platform::Audio& audio, const sim::World& before, const sim::W
 
 // M0 frame loop. Fixed 60Hz simulation double-buffered into two snapshots, with
 // the render interpolating between them by the leftover-time alpha.
+
+/// The authoritative server: no window, no renderer, no audio. Steps on the
+/// same fixed clock the client does and sleeps between ticks rather than
+/// spinning, because a dedicated server should not eat a core to do nothing.
+int run_server(u16 port, u64 tick_cap) {
+    core::Result<session::ServerHost, const char*> host_r =
+        session::ServerHost::open(port, sim::MAX_PLAYERS);
+    if (host_r.is_err()) {
+        core::log_errorf("server: %s", host_r.error());
+        return 1;
+    }
+    session::ServerHost host = static_cast<session::ServerHost&&>(host_r.value());
+    core::log_infof("server: listening on %u, up to %u clients", host.port(), sim::MAX_PLAYERS);
+
+    sim::FixedTimestep timestep;
+    u64 prev_ns = core::Timer::now_ns();
+    u64 report_ns = prev_ns;
+    u64 ticks_total = 0;
+    while (tick_cap == 0 || ticks_total < tick_cap) {
+        const u64 now_ns = core::Timer::now_ns();
+        const f64 elapsed = static_cast<f64>(now_ns - prev_ns) * 1e-9;
+        prev_ns = now_ns;
+
+        const u32 ticks = timestep.advance(elapsed, 8);
+        for (u32 i = 0; i < ticks; ++i) {
+            host.poll();
+            host.tick();
+            host.broadcast();
+            ++ticks_total;
+        }
+        if (now_ns - report_ns >= 1000000000ull) {
+            report_ns = now_ns;
+            core::log_infof("server: t=%llus clients=%u tick=%u",
+                            static_cast<unsigned long long>(ticks_total / sim::SIM_HZ),
+                            host.client_count(), host.world().tick.raw);
+        }
+        // A quarter of a tick. Long enough to idle, short enough that the
+        // accumulator never has to catch up by more than one tick.
+        timespec nap{};
+        nap.tv_nsec = 1000000000L / (static_cast<long>(sim::SIM_HZ) * 4);
+        nanosleep(&nap, nullptr);
+    }
+    core::log_infof("server: done, %llu ticks", static_cast<unsigned long long>(ticks_total));
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    const u64 frame_cap = parse_frame_cap(argc, argv);
-    const char* capture_path = parse_capture_path(argc, argv);
+    const Options options = parse_options(argc, argv);
+    const u64 frame_cap = options.frame_cap;
+    const char* capture_path = options.capture;
     const bool interactive = frame_cap == 0;
 
     core::Arena permanent = core::Arena::with_capacity(64ull << 20);
+    if (options.mode == Options::Mode::Server) {
+        // The level first: bots path against it and every shot traces it.
+        core::Arena server_scratch = core::Arena::with_capacity(16ull << 20);
+        const core::Result<core::Unit, const char*> loaded =
+            sim::load_level(server_scratch, MAP_PATH);
+        if (loaded.is_err()) {
+            core::log_errorf("map: %s", loaded.error());
+            return 1;
+        }
+        return run_server(options.port, frame_cap);
+    }
+
     core::Arena frame = core::Arena::with_capacity(16ull << 20);
     // Scratch peaks during model loading, when file bytes and decoded pixels
     // coexist briefly. Reset after startup and per use.
@@ -188,6 +285,26 @@ int main(int argc, char** argv) {
     prev_world = curr_world;
     sim::FixedTimestep timestep;
 
+    // Connected play. The client drives slot 0 and draws its own prediction;
+    // the server is what everything is eventually reconciled against. A second
+    // human needs the renderer to look out of a slot other than 0, which it
+    // cannot do yet.
+    session::ClientLink link;
+    bool connected = false;
+    if (options.mode == Options::Mode::Client) {
+        core::Result<session::ClientLink, const char*> link_r =
+            session::ClientLink::open(net::Address::loopback(options.port), 0, 1);
+        if (link_r.is_err()) {
+            core::log_errorf("connect: %s", link_r.error());
+            return 1;
+        }
+        link = static_cast<session::ClientLink&&>(link_r.value());
+        connected = true;
+        curr_world = link.world();
+        prev_world = curr_world;
+        core::log_infof("client: talking to localhost:%u", options.port);
+    }
+
     const u64 permanent_baseline = permanent.used();
     const u64 start_ns = core::Timer::now_ns();
     u64 prev_ns = start_ns;
@@ -209,7 +326,13 @@ int main(int argc, char** argv) {
             prev_world = curr_world;
             const sim::InputCmd cmd = win.capture_input(curr_world.tick);
             sim::World next{};
-            sim::simulate(curr_world, cmd, next);
+            if (connected) {
+                link.send(cmd);   // predicts locally, then puts it on the wire
+                (void)link.poll();  // and folds in whatever the server has said
+                next = link.world();
+            } else {
+                sim::simulate(curr_world, cmd, next);
+            }
             audio_events(audio, curr_world, next);
             scene.note_events(curr_world, next);
             curr_world = next;
