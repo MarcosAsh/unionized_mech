@@ -122,12 +122,65 @@ static void test_tape_round_trip() {
     ASSERT(hash(a) == hash(b));
 }
 
+
+/// How far character `slot` travels on the ground over `ticks`, given a fixed
+/// per-slot command set and a world that says how many slots are people.
+static f32 travelled(u8 humans, const InputCmd cmds[MAX_PLAYERS], u32 slot, u32 ticks) {
+    World w{};
+    init_match(w);
+    w.humans = humans;
+    const f32 x0 = w.chars[slot].x;
+    const f32 z0 = w.chars[slot].z;
+    for (u32 i = 0; i < ticks; ++i) {
+        World next{};
+        simulate(w, cmds, next);
+        w = next;
+    }
+    const f32 dx = w.chars[slot].x - x0;
+    const f32 dz = w.chars[slot].z - z0;
+    return std::sqrt(dx * dx + dz * dz);
+}
+
+// Slots inside `humans` are driven from outside; slots past it think for
+// themselves. This is the whole of what makes more than one player possible, so
+// it is checked on the observable difference rather than on a flag: handed
+// nothing at all, a person stands still and a bot goes hunting.
+static void test_humans_are_driven_and_bots_think() {
+    InputCmd idle[MAX_PLAYERS] = {};
+    ASSERT(travelled(2, idle, 1, 120) < 1.0f);   // slot 1 is a person doing nothing
+    ASSERT(travelled(1, idle, 1, 120) > 5.0f);   // slot 1 is a bot, and bots hunt
+
+    // And a person handed a command acts on it.
+    InputCmd forward[MAX_PLAYERS] = {};
+    forward[1].move_y = 1;
+    ASSERT(travelled(2, forward, 1, 120) > 5.0f);
+}
+
+// The single-command form is the single-player match and must stay exactly that:
+// slot 0 driven, everyone else thinking. It is what main, the headless runner
+// and most tests call, so a change in the array form must not move it.
+static void test_single_command_form_matches_the_array_form() {
+    InputCmd cmds[MAX_PLAYERS] = {};
+    cmds[0] = scripted_input(3);
+
+    World a{};
+    init_match(a);
+    World b = a;
+    World na{};
+    World nb{};
+    simulate(a, cmds[0], na);   // convenience overload
+    simulate(b, cmds, nb);      // explicit array
+    ASSERT(hash(na) == hash(nb));
+}
+
 void run_core() {
     test_replay_twice_identical();
     test_simulate_is_pure();
     test_tick_advances();
     test_fixed_timestep();
     test_tape_round_trip();
+    test_humans_are_driven_and_bots_think();
+    test_single_command_form_matches_the_array_form();
 }
 
 }  // namespace sim_tests

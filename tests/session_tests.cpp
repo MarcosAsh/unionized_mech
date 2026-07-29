@@ -8,6 +8,8 @@
 #include "core/types.h"
 #include "session/session.h"
 
+#include <cmath>
+
 using namespace session;
 
 /// A packet in flight, held for as long as the test's latency says.
@@ -35,10 +37,10 @@ static void test_prediction_matches_server_exactly() {
         const sim::InputCmd cmd = sim::scripted_input(i);
         const u32 tick = client.predict(cmd);
 
-        server.on_input(tick, cmd, client.baseline());
+        server.on_input(0, tick, cmd, client.baseline());
         server.tick();
 
-        const u32 n = server.write_snapshot(packet, sizeof(packet));
+        const u32 n = server.write_snapshot(0, packet, sizeof(packet));
         ASSERT(n > sizeof(SnapshotHeader));
         SnapshotHeader header{};
         __builtin_memcpy(&header, packet, sizeof(header));
@@ -77,12 +79,12 @@ static void test_replay_absorbs_latency() {
         // lag is exactly why the server diffs against an older snapshot than
         // the client's newest, and why the client has to keep a ring of them.
         if (i >= LATENCY) {
-            server.on_input(tick - LATENCY, sim::scripted_input(i - LATENCY),
+            server.on_input(0, tick - LATENCY, sim::scripted_input(i - LATENCY),
                             baseline_at[i - LATENCY]);
         }
         server.tick();
 
-        const u32 n = server.write_snapshot(packet, sizeof(packet));
+        const u32 n = server.write_snapshot(0, packet, sizeof(packet));
         ASSERT(n > 0);
         Wire& slot = flight[i % 64];
         ASSERT(!slot.live);
@@ -123,10 +125,10 @@ static void test_unknown_baseline_is_refused() {
     static u8 packet[net::MAX_PACKET];
     for (u32 i = 0; i < 5; ++i) {
         const sim::InputCmd cmd = sim::scripted_input(i);
-        server.on_input(client.predict(cmd), cmd, client.baseline());
+        server.on_input(0, client.predict(cmd), cmd, client.baseline());
         server.tick();
     }
-    const u32 n = server.write_snapshot(packet, sizeof(packet));
+    const u32 n = server.write_snapshot(0, packet, sizeof(packet));
     SnapshotHeader header{};
     __builtin_memcpy(&header, packet, sizeof(header));
     // Claim it was diffed against a tick the client has never confirmed.
@@ -147,16 +149,16 @@ static void test_stale_snapshot_is_dropped() {
     static u8 second[net::MAX_PACKET];
 
     const sim::InputCmd cmd = sim::scripted_input(0);
-    server.on_input(client.predict(cmd), cmd, client.baseline());
+    server.on_input(0, client.predict(cmd), cmd, client.baseline());
     server.tick();
-    const u32 n1 = server.write_snapshot(first, sizeof(first));
+    const u32 n1 = server.write_snapshot(0, first, sizeof(first));
     SnapshotHeader h1{};
     __builtin_memcpy(&h1, first, sizeof(h1));
 
     const sim::InputCmd cmd2 = sim::scripted_input(1);
-    server.on_input(client.predict(cmd2), cmd2, client.baseline());
+    server.on_input(0, client.predict(cmd2), cmd2, client.baseline());
     server.tick();
-    const u32 n2 = server.write_snapshot(second, sizeof(second));
+    const u32 n2 = server.write_snapshot(0, second, sizeof(second));
     SnapshotHeader h2{};
     __builtin_memcpy(&h2, second, sizeof(h2));
 
@@ -183,11 +185,11 @@ static void test_server_overrules_the_client() {
         // Half the commands never reach the server, so the two worlds genuinely
         // disagree rather than merely lagging.
         if (i % 2 == 0) {
-            server.on_input(tick, cmd, client.baseline());
+            server.on_input(0, tick, cmd, client.baseline());
         }
         server.tick();
     }
-    const u32 n = server.write_snapshot(packet, sizeof(packet));
+    const u32 n = server.write_snapshot(0, packet, sizeof(packet));
     SnapshotHeader header{};
     __builtin_memcpy(&header, packet, sizeof(header));
     ASSERT(client.on_snapshot(header, packet + sizeof(SnapshotHeader),
@@ -210,9 +212,9 @@ static void test_snapshots_fit_the_budget() {
     u32 worst = 0;
     for (u32 i = 0; i < 600; ++i) {
         const sim::InputCmd cmd = sim::scripted_input(i);
-        server.on_input(client.predict(cmd), cmd, client.baseline());
+        server.on_input(0, client.predict(cmd), cmd, client.baseline());
         server.tick();
-        const u32 n = server.write_snapshot(packet, sizeof(packet));
+        const u32 n = server.write_snapshot(0, packet, sizeof(packet));
         ASSERT(n > 0);
         ASSERT(n <= net::MAX_PACKET);
         if (n > worst) {
@@ -228,6 +230,83 @@ static void test_snapshots_fit_the_budget() {
     ASSERT(worst < net::MAX_PACKET / 2);
 }
 
+
+// Two clients on one server, each driving its own slot. This is what the
+// per-slot command change bought, so it is checked end to end: both predict,
+// both reconcile, and both converge on the server's world rather than on each
+// other's guess about what the other was doing.
+static void test_two_clients_share_one_world() {
+    Server server;
+    Client a;
+    Client b;
+    server.start(2);
+    a.start(0, 2);
+    b.start(1, 2);
+
+    static u8 packet[net::MAX_PACKET];
+    for (u32 i = 0; i < 240; ++i) {
+        // The two players do visibly different things.
+        sim::InputCmd ca{};
+        ca.move_y = 1;
+        sim::InputCmd cb{};
+        cb.move_x = 1;
+
+        const u32 ta = a.predict(ca);
+        const u32 tb = b.predict(cb);
+        server.on_input(0, ta, ca, a.baseline());
+        server.on_input(1, tb, cb, b.baseline());
+        server.tick();
+
+        for (u32 slot = 0; slot < 2; ++slot) {
+            const u32 n = server.write_snapshot(slot, packet, sizeof(packet));
+            ASSERT(n > sizeof(SnapshotHeader));
+            SnapshotHeader header{};
+            __builtin_memcpy(&header, packet, sizeof(header));
+            Client& c = slot == 0 ? a : b;
+            ASSERT(c.on_snapshot(header, packet + sizeof(SnapshotHeader),
+                                 n - sizeof(SnapshotHeader)));
+        }
+        // Neither client's prediction drifts from the authority, and they agree
+        // with each other because they agree with it.
+        ASSERT(sim::hash(a.world()) == sim::hash(server.world()));
+        ASSERT(sim::hash(b.world()) == sim::hash(server.world()));
+    }
+
+    // Each client drove its own character, not the other's, and both moved.
+    ASSERT(a.slot() == 0 && b.slot() == 1);
+    ASSERT(server.world().chars[0].z != server.world().chars[1].z ||
+           server.world().chars[0].x != server.world().chars[1].x);
+}
+
+
+// A client predicts into its OWN slot. This needs no server, and deliberately
+// so: with one in the loop every snapshot corrects the mistake within a tick,
+// so a prediction aimed at the wrong character is invisible from the outside.
+// That is precisely how it would ship unnoticed.
+static void test_client_predicts_its_own_slot() {
+    Client c;
+    c.start(1, 2);  // this client drives slot 1; slot 0 is another person
+
+    const f32 mine_x = c.world().chars[1].x;
+    const f32 mine_z = c.world().chars[1].z;
+    const f32 other_x = c.world().chars[0].x;
+    const f32 other_z = c.world().chars[0].z;
+
+    sim::InputCmd cmd{};
+    cmd.move_y = 1;
+    for (u32 i = 0; i < 90; ++i) {
+        (void)c.predict(cmd);
+    }
+
+    const f32 mdx = c.world().chars[1].x - mine_x;
+    const f32 mdz = c.world().chars[1].z - mine_z;
+    const f32 odx = c.world().chars[0].x - other_x;
+    const f32 odz = c.world().chars[0].z - other_z;
+    // Its own character walked; the other person, who sent nothing, stood still.
+    ASSERT(std::sqrt(mdx * mdx + mdz * mdz) > 3.0f);
+    ASSERT(std::sqrt(odx * odx + odz * odz) < 1.0f);
+}
+
 int main() {
     // The sim needs a level: bots path against it and hitscan traces it.
     core::Arena arena = core::Arena::with_capacity(1u << 20);
@@ -239,6 +318,8 @@ int main() {
     test_stale_snapshot_is_dropped();
     test_server_overrules_the_client();
     test_snapshots_fit_the_budget();
+    test_two_clients_share_one_world();
+    test_client_predicts_its_own_slot();
     core::log_info("session_tests: all passed");
     return 0;
 }

@@ -48,22 +48,23 @@ struct InputHeader {
 /// delta against whatever the client last confirmed it holds.
 class Server {
 public:
-    /// Start a fresh match.
-    void start();
+    /// Start a fresh match with `clients` human slots; the rest are bots.
+    void start(u32 clients = 1);
 
-    /// Take a client command for `tick`, along with the snapshot tick the
-    /// client says it holds. Out-of-order and duplicate commands are ignored:
-    /// only the newest matters, since the next step uses it.
-    void on_input(u32 tick, const sim::InputCmd& cmd, u32 client_baseline);
+    /// Take a command from the client in `slot` for `tick`, along with the
+    /// snapshot tick it says it holds. Out-of-order and duplicate commands are
+    /// ignored: only the newest matters, since the next step uses it.
+    void on_input(u32 slot, u32 tick, const sim::InputCmd& cmd, u32 client_baseline);
 
     /// Advance one tick using the most recent command received.
     void tick();
 
-    /// Write a snapshot into `out`, diffed against the snapshot the client last
-    /// said it holds when the server still has that tick, and against the
-    /// cold-start world otherwise. Returns bytes written, or 0 when it will not
-    /// fit, which the caller must treat as "send nothing this tick".
-    [[nodiscard]] u32 write_snapshot(u8* out, u32 capacity) const;
+    /// Write a snapshot for the client in `slot`, diffed against the snapshot
+    /// that client last said it holds when the server still has that tick, and
+    /// against the cold-start world otherwise. Each client is diffed separately
+    /// because each acknowledges at its own pace. Returns bytes written, or 0
+    /// when it will not fit, which the caller must treat as "send nothing".
+    [[nodiscard]] u32 write_snapshot(u32 slot, u8* out, u32 capacity) const;
 
     [[nodiscard]] const sim::World& world() const { return world_; }
     [[nodiscard]] u32 tick_count() const { return world_.tick.raw; }
@@ -71,9 +72,9 @@ public:
 private:
     sim::World world_{};
     sim::World history_[HISTORY]{};  ///< Past states, indexed by tick % HISTORY.
-    sim::InputCmd latest_{};
-    u32 latest_tick_ = NO_TICK;
-    u32 client_baseline_ = NO_TICK;
+    sim::InputCmd latest_[sim::MAX_PLAYERS]{};
+    u32 latest_tick_[sim::MAX_PLAYERS]{};
+    u32 client_baseline_[sim::MAX_PLAYERS]{};
 };
 
 /// The client's copy: a predicted world it draws, plus the last authoritative
@@ -81,11 +82,17 @@ private:
 class Client {
 public:
     /// Start from the same fresh match the server did, so the first delta has a
-    /// baseline to land on without anything being sent.
-    void start();
+    /// baseline to land on without anything being sent. `slot` is which
+    /// character this client drives and `clients` how many slots are people —
+    /// both must match the server, or the two simulate different worlds from
+    /// the same inputs and every snapshot arrives as a correction.
+    void start(u32 slot = 0, u32 clients = 1);
 
-    /// Record and apply `cmd` for the current tick, advancing the predicted
-    /// world immediately. Returns the tick the command was stamped with.
+    /// Record and apply `cmd` for this client's own slot, advancing the
+    /// predicted world immediately. Other people's slots are predicted as
+    /// holding still, because their input has not arrived and inventing motion
+    /// for them would only be corrected; the server's snapshot is what settles
+    /// what they actually did. Returns the tick the command was stamped with.
     u32 predict(const sim::InputCmd& cmd);
 
     /// Apply a snapshot: adopt the authoritative state, then replay every
@@ -97,6 +104,12 @@ public:
     /// What to draw: the prediction, which is ahead of the server by the round
     /// trip.
     [[nodiscard]] const sim::World& world() const { return predicted_; }
+
+    /// This client's own character in the predicted world.
+    [[nodiscard]] const sim::Character& me() const { return predicted_.chars[slot_]; }
+
+    /// Which character this client drives.
+    [[nodiscard]] u32 slot() const { return slot_; }
 
     /// The last authoritative state, for reference and tests.
     [[nodiscard]] const sim::World& confirmed() const { return confirmed_; }
@@ -125,6 +138,7 @@ private:
     u32 confirmed_ticks_[HISTORY]{};
     bool confirmed_valid_[HISTORY]{};
     sim::InputCmd history_[HISTORY]{};  ///< Sent commands, indexed by tick % HISTORY.
+    u32 slot_ = 0;
     u32 last_replay_ = 0;
 };
 

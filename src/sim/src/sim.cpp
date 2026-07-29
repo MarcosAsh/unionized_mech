@@ -65,16 +65,18 @@ void init_match(World& world) {
     }
 }
 
-void simulate(const World& prev, const InputCmd& cmd, World& next) {
+void simulate(const World& prev, const InputCmd given[MAX_PLAYERS], World& next) {
     next = prev;
     next.tick = TickId{prev.tick.raw + 1};
 
-    // Bot inputs derive from the previous world, deterministically, through
-    // the same InputCmd the player and, later, the network use.
+    // Bot inputs derive from the previous world, deterministically, through the
+    // same InputCmd people and the network use. Which slots are people is world
+    // state rather than a parameter, so a replay cannot disagree with the run it
+    // came from about who was driving.
+    const u32 humans = prev.humans < MAX_PLAYERS ? prev.humans : MAX_PLAYERS;
     InputCmd cmds[MAX_PLAYERS];
-    cmds[0] = cmd;
-    for (u32 i = 1; i < MAX_PLAYERS; ++i) {
-        cmds[i] = bot_think(prev, i);
+    for (u32 i = 0; i < MAX_PLAYERS; ++i) {
+        cmds[i] = i < humans ? given[i] : bot_think(prev, i);
     }
     for (u32 i = 0; i < MAX_PLAYERS; ++i) {
         if (next.chars[i].alive != 0 && next.chars[i].merged == 0) {
@@ -105,6 +107,12 @@ void simulate(const World& prev, const InputCmd& cmd, World& next) {
             next.end_ticks = 600;  // ten seconds of banner
         }
     }
+}
+
+void simulate(const World& prev, const InputCmd& cmd, World& next) {
+    InputCmd cmds[MAX_PLAYERS] = {};
+    cmds[0] = cmd;
+    simulate(prev, cmds, next);
 }
 
 u64 hash(const World& w) {

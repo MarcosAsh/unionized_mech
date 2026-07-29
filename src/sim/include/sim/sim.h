@@ -201,7 +201,10 @@ struct World {
     u32 seed = 0x4d454348u;  ///< Feeds every in-simulation random choice.
     u16 end_ticks = 0;  ///< Countdown of the end-of-match banner phase.
     u8 winner = 0;      ///< 0 none, otherwise winning team + 1.
-    u8 pad = 0;
+    /// Slots [0, humans) take their commands from outside; every slot at or past
+    /// it thinks for itself. One is the single-player match against nine bots; a
+    /// server raises it as clients connect, and the bots fill whatever is left.
+    u8 humans = 1;
     Mech mech;
     Character chars[MAX_PLAYERS];
     Grenade grenades[MAX_GRENADES];
@@ -278,10 +281,17 @@ struct Spawn {
 /// rest are bots, everyone at their team spawns.
 void init_match(World& world);
 
-/// Advance the world by one tick. Pure: it reads `prev` and the player's `cmd`
-/// and writes `next`, with no globals and no wall-clock. Bot inputs derive
-/// deterministically from `prev` inside. The same inputs always yield the same
-/// `next`, on every target platform.
+/// Advance the world by one tick. `cmds` supplies a command for every slot;
+/// slots at or past `World::humans` ignore theirs and think for themselves.
+/// Pure: it reads `prev` and writes `next`, with no globals and no wall-clock,
+/// and bot inputs derive deterministically from `prev`. The same inputs always
+/// yield the same `next`, on every target platform.
+void simulate(const World& prev, const InputCmd cmds[MAX_PLAYERS], World& next);
+
+/// One command for slot 0, which is the single-player match. Slots 1 and up
+/// think for themselves *unless* `World::humans` says they are people, in which
+/// case they get an empty command — which is what a player sending nothing
+/// looks like, and the reason a server must use the array form.
 void simulate(const World& prev, const InputCmd& cmd, World& next);
 
 /// A 64-bit hash of the world state, stable across platforms. Used by the

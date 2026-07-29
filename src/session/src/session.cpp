@@ -7,44 +7,54 @@ namespace {
 /// The state both ends agree on before a single packet is exchanged. The client
 /// builds it for itself, which is what lets even the first snapshot be a delta
 /// rather than a full world too big to send.
-[[nodiscard]] sim::World fresh_match() {
+[[nodiscard]] sim::World fresh_match(u32 clients) {
     sim::World w{};
     sim::init_match(w);
+    w.humans = static_cast<u8>(clients < sim::MAX_PLAYERS ? clients : sim::MAX_PLAYERS);
     return w;
 }
 
 }  // namespace
 
-void Server::start() {
-    world_ = fresh_match();
+void Server::start(u32 clients) {
+    world_ = fresh_match(clients);
     for (u32 i = 0; i < HISTORY; ++i) {
         history_[i] = world_;
     }
-    latest_ = sim::InputCmd{};
-    latest_tick_ = NO_TICK;
-    client_baseline_ = NO_TICK;
+    for (u32 i = 0; i < sim::MAX_PLAYERS; ++i) {
+        latest_[i] = sim::InputCmd{};
+        latest_tick_[i] = NO_TICK;
+        client_baseline_[i] = NO_TICK;
+    }
 }
 
-void Server::on_input(u32 tick, const sim::InputCmd& cmd, u32 client_baseline) {
-    // Only the newest command matters: the next step uses one command, and an
-    // older one arriving late describes a moment already simulated.
-    if (latest_tick_ != NO_TICK && tick <= latest_tick_) {
+void Server::on_input(u32 slot, u32 tick, const sim::InputCmd& cmd, u32 client_baseline) {
+    if (slot >= sim::MAX_PLAYERS) {
         return;
     }
-    latest_tick_ = tick;
-    latest_ = cmd;
-    client_baseline_ = client_baseline;
+    // Only the newest command per client matters: the next step uses one
+    // command each, and an older one arriving late describes a moment already
+    // simulated. Clients are tracked separately because they drift apart.
+    if (latest_tick_[slot] != NO_TICK && tick <= latest_tick_[slot]) {
+        return;
+    }
+    latest_tick_[slot] = tick;
+    latest_[slot] = cmd;
+    client_baseline_[slot] = client_baseline;
 }
 
 void Server::tick() {
     sim::World next{};
-    sim::simulate(world_, latest_, next);
+    sim::simulate(world_, latest_, next);  // one command per slot
     world_ = next;
     history_[world_.tick.raw % HISTORY] = world_;
 }
 
-u32 Server::write_snapshot(u8* out, u32 capacity) const {
-    const u32 client_baseline = client_baseline_;
+u32 Server::write_snapshot(u32 slot, u8* out, u32 capacity) const {
+    if (slot >= sim::MAX_PLAYERS) {
+        return 0;
+    }
+    const u32 client_baseline = client_baseline_[slot];
     if (capacity < sizeof(SnapshotHeader)) {
         return 0;
     }
@@ -55,13 +65,13 @@ u32 Server::write_snapshot(u8* out, u32 capacity) const {
         client_baseline != NO_TICK && world_.tick.raw >= client_baseline &&
         world_.tick.raw - client_baseline < HISTORY;
 
-    const sim::World cold = fresh_match();
+    const sim::World cold = fresh_match(world_.humans);
     const sim::World& baseline = have_baseline ? history_[client_baseline % HISTORY] : cold;
 
     SnapshotHeader header{};
     header.tick = world_.tick.raw;
     header.baseline_tick = have_baseline ? client_baseline : NO_TICK;
-    header.last_input = latest_tick_;
+    header.last_input = latest_tick_[slot];
 
     const u32 body = net::delta_encode(&baseline, &world_, sizeof(sim::World),
                                        out + sizeof(SnapshotHeader),
@@ -73,8 +83,9 @@ u32 Server::write_snapshot(u8* out, u32 capacity) const {
     return sizeof(SnapshotHeader) + body;
 }
 
-void Client::start() {
-    predicted_ = fresh_match();
+void Client::start(u32 slot, u32 clients) {
+    slot_ = slot < sim::MAX_PLAYERS ? slot : 0;
+    predicted_ = fresh_match(clients);
     confirmed_ = predicted_;
     confirmed_tick_ = NO_TICK;
     for (u32 i = 0; i < HISTORY; ++i) {
@@ -88,8 +99,10 @@ void Client::start() {
 u32 Client::predict(const sim::InputCmd& cmd) {
     const u32 tick = predicted_.tick.raw + 1;
     history_[tick % HISTORY] = cmd;
+    sim::InputCmd cmds[sim::MAX_PLAYERS] = {};
+    cmds[slot_] = cmd;
     sim::World next{};
-    sim::simulate(predicted_, cmd, next);
+    sim::simulate(predicted_, cmds, next);
     predicted_ = next;
     return tick;
 }
@@ -105,7 +118,7 @@ bool Client::on_snapshot(const SnapshotHeader& header, const u8* delta, u32 delt
     // rejecting every packet under it.
     sim::World baseline{};
     if (header.baseline_tick == NO_TICK) {
-        baseline = fresh_match();
+        baseline = fresh_match(predicted_.humans);
     } else {
         const u32 slot = header.baseline_tick % HISTORY;
         if (!confirmed_valid_[slot] || confirmed_ticks_[slot] != header.baseline_tick) {
@@ -141,8 +154,10 @@ bool Client::on_snapshot(const SnapshotHeader& header, const u8* delta, u32 delt
         if (target - tick >= HISTORY) {
             continue;  // that command has fallen out of the ring
         }
+        sim::InputCmd replay_cmds[sim::MAX_PLAYERS] = {};
+        replay_cmds[slot_] = history_[tick % HISTORY];
         sim::World next{};
-        sim::simulate(rolled, history_[tick % HISTORY], next);
+        sim::simulate(rolled, replay_cmds, next);
         rolled = next;
         ++replayed;
     }
